@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Control_Surface.h>
 #include <U8g2lib.h>
 
 // 1. SETUP ECRAN
@@ -12,14 +11,6 @@ const pin_t rowPins[] = {24, 23, 34, 35, 28};
 
 static constexpr uint8_t ROWS = sizeof(rowPins) / sizeof(rowPins[0]);
 static constexpr uint8_t COLS = sizeof(colPins) / sizeof(colPins[0]);
-
-const uint8_t matrixNotes[ROWS][COLS] = {
-  {1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
-  {11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-  {21, 22, 23, 24, 25, 26, 27, 28, 29, 30},
-  {31, 32, 33, 34, 35, 36, 37, 38, 39, 40},
-  {41, 42, 43, 44, 45, 46, 47, 48, 49, 50},
-};
 
 bool keyState[ROWS][COLS] = {};
 uint32_t keyLastChange[ROWS][COLS] = {};
@@ -65,6 +56,7 @@ void scanMatrix() {
 }
 
 void setup() {
+  Serial.begin(9600);
   u8g2.begin();
   setupMatrixPins();
   pinMode(A1, INPUT); // Joystick
@@ -77,25 +69,32 @@ void loop() {
 
   // Titre
   u8g2.setFont(u8g2_font_ncenB08_tr);
-  u8g2.drawStr(0, 10, "TOTEM DIAG");
+  u8g2.drawStr(0, 10, "TOTEM SLAVE TEST");
 
   // Affichage Joystick
   int joyVal = analogRead(A1);
-  const int barWidth = map(joyVal, 0, 1023, 0, 98);
+  const uint8_t barUnits = map(joyVal, 0, 1023, 0, 10);
+  char joyLine[32];
+  char bar[11];
+  for (uint8_t i = 0; i < 10; ++i) {
+    bar[i] = (i < barUnits) ? '=' : '.';
+  }
+  bar[10] = '\0';
+  snprintf(joyLine, sizeof(joyLine), "J: [%s] (%d)", bar, joyVal);
   u8g2.setFont(u8g2_font_6x12_tr);
-  u8g2.drawStr(0, 30, "JOY:");
-  u8g2.drawFrame(30, 22, 98, 10);
-  u8g2.drawBox(30, 22, barWidth, 10);
+  u8g2.drawStr(0, 28, joyLine);
 
   // Affichage Matrice (Dernière touche détectée)
+  char keyLine[24];
   if (lastRowPressed >= 0 && lastColPressed >= 0) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "TOUCH: Row %d - Col %d",
-             lastRowPressed + 1, lastColPressed + 1);
-    u8g2.drawStr(0, 50, buf);
+    snprintf(keyLine, sizeof(keyLine), "KEY: R[%d] C[%d]",
+             lastRowPressed, lastColPressed);
   } else {
-    u8g2.drawStr(0, 50, "TOUCH: -");
+    snprintf(keyLine, sizeof(keyLine), "KEY: R[-] C[-]");
   }
+  u8g2.drawStr(0, 44, keyLine);
+
+  u8g2.drawStr(0, 62, "Hack Pins: 33/37/38");
 
   u8g2.sendBuffer();
 }
