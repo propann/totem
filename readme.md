@@ -1,151 +1,80 @@
-> NOTE: Microdexed-touch is capable of generating audio with a large dynamic range, the extremes of which can cause damage to loudspeakers or other components, and also to your hearing.
-> Please be specially careful when activating the MultiBand Compressor. Depending on it's settings, this easily can increase the perceived output loudness by 10x or even more.<br>
-> Set the volume **on your amplifier to zero** and then increase the volume in slow steps, to avoid taking any risk hurting your ears or your equipment.
+﻿# 🗿 PROJECT TOTEM : Hybrid Dual-Teensy Workstation
 
-# MicroDexed-touch
+**Repository:** https://github.com/propann/totem  
+**Base Project:** https://github.com/FundamentalFrequency/LMN-3
 
-<br><p>
-<img src="https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/Capacitive_Touch/mdt_capacitive_touch.png" >
-<br>
-(SLA PRINTED ENCLOSURE, DISPLAY SIZE LEFT: 2.8", MIDDLE: 2,8" and RIGHT: 3.2")
-<br><p>
-<img src="https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/Capacitive_Touch/pcb28-32.jpg" >
-<br>
-(PCB BASED FRONT/BACK PANEL, DISPLAY SIZE LEFT 2.8" and RIGHT 3.2")
-<br><p>
-## This is MicroDexed with TFT Touch Display, graphic UI and sequencer
+## 📖 Overview
 
-### This build requires a Teensy 4.1,  PCM5102A Audio Board, 320x240 ILI9341 SPI Display with Capacitive Touchscreen and a PSRAM Chip for custom samples.
-<p>
+Project Totem is a radical re-engineering of the LMN-3 workstation. It replaces the Raspberry Pi (SBC) with a secondary **Teensy 4.1**, converting the system into a "Bare-Metal Cluster". This eliminates OS latency, boot times, and jitter, dedicating one CPU to UI/Synth Engine and the other to I/O/Controls.
 
-MicroDexed started as a Teensy based, 6-operator-FM-synthesizer. The first generation is still maintained at: [https://codeberg.org/dcoredump/MicroDexed](https://codeberg.org/dcoredump/MicroDexed)
+### Architecture
 
-Compared to the first generation, MicroDexed-touch offers a lot of new features/improvements:
+* **Node A (Master):** Teensy 4.1 running MicroDexed-touch + Peanut-GB (GameBoy Emulator). Handles Audio Engine, UI, and Mix.
+* **Node B (Slave):** Teensy 4.1 (on LMN-3 PCB). Handles Key Matrix, Joystick, Encoders, and Auxiliary Audio.
 
-* "Large" Graphical Interface, view and edit multiple Parameters in one Screen
+---
 
-* Use external MIDI gear over USB or Mini TRS Jacks (DIN MIDI with adaptor) from 2 x 16 MIDI Channels in the Sequencer
+## ⚠️ HARDWARE MODIFICATION REQUIRED (CRITICAL)
 
-* Map MIDI CC to external MIDI Devices to control Input/Parameters
+**DO NOT FLASH THE SLAVE FIRMWARE ON A STOCK LMN-3 PCB WITHOUT MODIFICATION.**
+The stock LMN-3 PCB routes Matrix Columns to Pins 0, 1, and 14. Project Totem requires these pins for High-Speed UART and S/PDIF.
 
-* Global plate reverb, 2 global delay effects (500ms, with added PSRAM chip 60 seconds or even more)
+### The "Pin Bending" Hack (Slave Unit)
 
-* Loading, playing and editing multi-sampled instruments or layered instruments in a "live" mode or played by the sequencer. Auto detection sample zones but also can be edited manually. This is early work in progress and currently not stable when using pitch shifting and polyphony
+To build the Slave unit, you must isolate specific pins from the PCB and reroute them via fly-wires.
 
-* 2 instances of "Virtual Analog" Monosynths with one OSC, PWM, Multimode Filter and Noise. A lot of useful new sound possibilities.
+1.  **Isolate Pins:** During assembly, bend **Pin 0, 1, and 14** outwards (horizontal). Do not solder them to the PCB headers.
+2.  **The Bridge (Inter-Teensy Connection):**
+    * **UART:** Slave Pin 0 (RX) <-> Master Pin 1 (TX)
+    * **UART:** Slave Pin 1 (TX) <-> Master Pin 0 (RX)
+    * **Audio:** Slave Pin 14 (SPDIF OUT) -> Master Pin 15 (SPDIF IN)
+    * **Ground:** Common Ground is mandatory.
+3.  **The Reroute (Fly-wires):**
+    Restore the broken matrix connections by soldering wires from the PCB holes to unused SD card pins on the Teensy:
+    * PCB Hole 0 -> Teensy **Pin 29**
+    * PCB Hole 1 -> Teensy **Pin 33**
+    * PCB Hole 14 -> Teensy **Pin 37**
 
-* 8 voice polyphonic Oscillator, based on the code of Mutable Instruments - Braids. No wavetables but added individual envelopes and multimode filters for all voices
- 
-* Much improved Sequencer with 8 Tracks, 16 Step Patterns, 16 Step Pattern Chains, up to 16384 Song Steps, Arpeggiator with 1/8 - 1/64 Steps, Arp Patterns including Euclidean settings, Pitched Drum- and Instrument Sample playback
+---
 
-* The sequencer can also play chords of various types, stacked up to 7 notes, using only a single sequencer track
+## 🎹 Firmware Modules
 
-* In addition to the chain based Sequencer there is second sequencing tool: LIVE SEQUENCER
+### 1. Firmware Slave (Controller)
+Located in `/firmware_slave`.
+* **Based on:** LMN-3 Firmware.
+* **Modifications:**
+    * Removed USB-MIDI / Added High-Speed Serial MIDI (2 Mbps).
+    * Added `AudioSynthWaveform` + `AudioOutputSPDIF3` (Pin 14).
+    * Implemented raw binary protocol for Joystick (X/Y/Btn) over Serial.
+    * Remapped Matrix Columns in `config.h` to match the hardware hack.
 
-* LIVE SEQUENCER offers 12 tracks for recording up to 4 patterns each, including a Song mode with pattern muting
+### 2. Firmware Master (Engine)
+Located in `/firmware_master`.
+* **Based on:** MicroDexed-touch.
+* **Features:**
+    * `AsyncAudioInputSPDIF3` to sync Slave audio (ASRC).
+    * Peanut-GB integration for emulation.
+    * Global Mixer (FM Synth + Emulator + Aux Input).
 
-* Both sequencers do work together and are fully synced
+---
 
-* Global Mixer View with all Channels
+## 🛠️ Protocols
 
-* Multiband Master Compressor with 4 bands
+**Serial Communication (Pins 0/1):**
+* **Baud Rate:** 2,000,000 (2 Mbps).
+* **Format:**
+    * Standard MIDI messages (NoteOn, CC) via `Control_Surface`.
+    * Custom Binary Packet for Joystick: `[0xFF, X, Y, Btn]`.
 
-* Sample Management from SD-CARD and PSRAM, samples can be loaded from SD-CARD to PSRAM during runtime.
+**Audio Transport:**
+* S/PDIF over TTL (3.3V) via Pin 14->15.
+* Sample Rate: 44.1 kHz.
 
-* Touch Mute Matrix for live / realtime performance
+---
 
-* Tracker View (Editor) - work in progress
-
-* Track Print/Recording - work in progress
-
-* Remote control in web-based 1:1 UI with added features (filemanager,filetransfer, screenshots etc.) Work in progress - connected to PC via Teensy MicroUSB Connector
-
-[https://www.youtube.com/watch?v=AkmqZVpW2Vg
-](https://www.youtube.com/watch?v=AkmqZVpW2Vg)
-by Floyd Steinberg
-<br>
-<p>
-
-[Part1/2](https://www.youtube.com/watch?v=v6thf0vhRxU)
-by fellpower (german language)
-
-[Part2/2](https://www.youtube.com/watch?v=wfSquKaAqik)
-by fellpower (german language)
-
-### YouTube playlist about the development:
-[https://www.youtube.com/playlist?list=PLHTypoMU1QoGOXPli8bjR6MknPiQpubHl
-](https://www.youtube.com/playlist?list=PLHTypoMU1QoGOXPli8bjR6MknPiQpubHl)
-
-## If you want to donate to this project, please check out this link:
-
-<a href="https://liberapay.com/positionhigh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>
-
-### User Chat groups
-
-[https://discord.gg/XCYk5P8GzF](https://discord.gg/XCYk5P8GzF)
-
-[https://matrix.to/#/#microdexed:matrix.org](https://matrix.to/#/#microdexed:matrix.org)
-
-### PCB is available from PCBWAY
-
-If you register and pay as a new user at PCBWAY with this Invite link, you should get $5 "New User Free Credit" - so you can order 5 PCB pieces for "free", except shipping and customs cost etc.
-    
-[https://www.pcbway.com/setinvite.aspx?inviteid=565384](https://www.pcbway.com/setinvite.aspx?inviteid=565384)
-<br>
-
-[MDT Product Page on PCBWAY](https://www.pcbway.com/project/shareproject/MicroDexed_Capacitive_Touch_64970fee.html)
-<br>
-
-[MDTX Product Page on PCBWAY](https://www.pcbway.com/project/shareproject/[MDTX]_MicroDexed_Extended_Edition_2810710b.html)
-<br>
-
-<a href="https://www.pcbway.com/project/shareproject/MicroDexed_Capacitive_Touch_64970fee.html"><img src="https://www.pcbway.com/project/img/images/frompcbway-1220.png" alt="PCB from PCBWay" /></a>
-
-<br>
-<p>
-
-## WIKI
-
-Installation / BOM / Compile Instructions / 3D printer files / FAQ / Changelog / News / Troubleshooting etc.
-<br>
-[https://codeberg.org/positionhigh/MicroDexed-touch/wiki/?action=_pages](https://codeberg.org/positionhigh/MicroDexed-touch/wiki/?action=_pages)
-
-## License
-
-This is a port of the original Dexed/msfa engine (see https://github.com/asb2m10/dexed and https://github.com/google/music-synthesizer-for-android) to be used on a ~~Teensy-3.6 or~~ Teensy-4.1.
-
-MicroDexed is licensed on the GPL v3. The msfa component (acronym for music synthesizer for android, see https://github.com/google/music-synthesizer-for-android) stays on the Apache 2.0 license to able to collaborate between projects.
-
-## Buttons / Encoders
-
-A quick guide how the push Encoders are working:
-
-Encoder left will be referred to as ENC_L and encoder right will be referred to as ENC_R.
-
-[SHORT PUSH] means a simple, momentary push on the encoder.
-
-[LONG PUSH] means a push and hold down of the encoder for about 2 seconds.
-
-Usually [SHORT PUSH] ENC_L brings you back to the main menu or closer to the main menu one step.
-
-Usually [SHORT PUSH] ENC_R selects or confirms an input/menu item/goes deeper into this item.
-
-In microsynth and in dexed voice page, [LONG PUSH] ENC_R, switches between the 2 Instances.
-
-In Menus that need 2 Encoders for naviation, ENC_R controls Y movement and ENC_L controls X movement (for example in Song mode)
-
-[LONG PUSH] ENC_L starts and stops the sequencer in most pages.
- 
-## MDT MANUAL AND BUILD GUIDE
-
-https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/MicroDexed-touch-manual.pdf
-
-## CONTRIBUTING
-
-This project lives from the contributions of C++ developers, testers, reviewers. Please check https://codeberg.org/positionhigh/MicroDexed-touch/issues to help in open topics or add your own Issue or Feature Request.
-
-## SURVEY / POLL: Let us know what you want to see (manufacturing/building MDT)
-[https://www.supersurvey.com/poll4335406x48364DD1-136](https://www.supersurvey.com/poll4335406x48364DD1-136)
-
-## SURVEY / POLL 08/2024 feature requests:
-[https://qvgopz6on.supersurvey.com/](https://qvgopz6on.supersurvey.com/)
+## Credits
+* **LMN-3:** Fundamental Frequency
+* **Teensy Audio Library:** Paul Stoffregen
+* **Control Surface:** tttapa
+* **MicroDexed-touch:** Holger Wirtz
+* **Peanut-GB:** deltabeard
