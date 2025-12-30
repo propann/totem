@@ -1,80 +1,47 @@
-﻿# 🗿 PROJECT TOTEM : Hybrid Dual-Teensy Workstation
+# TOTEM Workstation
 
-**Repository:** https://github.com/propann/totem  
-**Base Project:** https://github.com/FundamentalFrequency/LMN-3
+**TOTEM** est une workstation audio open-source basée sur l'architecture "Dual-Teensy", dérivée du projet LMN-3.
+**Based on the LMN-3 Project by fundamental.frequency.**
+Ce dépôt contient le code source unifié pour le processeur Maître (Audio) et le processeur Esclave (Contrôle/UI).
 
-## 📖 Overview
+## ⚠️ AVERTISSEMENT MATÉRIEL CRITIQUE ⚠️
 
-Project Totem is a radical re-engineering of the LMN-3 workstation. It replaces the Raspberry Pi (SBC) with a secondary **Teensy 4.1**, converting the system into a "Bare-Metal Cluster". This eliminates OS latency, boot times, and jitter, dedicating one CPU to UI/Synth Engine and the other to I/O/Controls.
+Ce firmware est conçu pour une version **modifiée** du PCB LMN-3. Ne pas flasher sur un PCB LMN-3 stock sans lire ceci :
 
-### Architecture
+### Architecture Dual-Teensy 4.1
+1.  **MASTER (Moteur Audio)** : Teensy 4.1 standard.
+2.  **SLAVE (Contrôleur UI)** : Teensy 4.1 avec modifications physiques irréversibles.
 
-* **Node A (Master):** Teensy 4.1 running MicroDexed-touch + Peanut-GB (GameBoy Emulator). Handles Audio Engine, UI, and Mix.
-* **Node B (Slave):** Teensy 4.1 (on LMN-3 PCB). Handles Key Matrix, Joystick, Encoders, and Auxiliary Audio.
+### Modifications du Teensy Esclave (Hardware Hack)
+Pour libérer les bus de communication UART et S/PDIF, les pins suivantes du Teensy Esclave doivent être **PLIÉES** (isolées du PCB) et connectées via des fils volants :
 
----
+* **Pin 0 (RX1)** : Connectée au Master TX.
+* **Pin 1 (TX1)** : Connectée au Master RX.
+* **Pin 14 (S/PDIF)** : Connectée au Master Pin 15.
 
-## ⚠️ HARDWARE MODIFICATION REQUIRED (CRITICAL)
-
-**DO NOT FLASH THE SLAVE FIRMWARE ON A STOCK LMN-3 PCB WITHOUT MODIFICATION.**
-The stock LMN-3 PCB routes Matrix Columns to Pins 0, 1, and 14. Project Totem requires these pins for High-Speed UART and S/PDIF.
-
-### The "Pin Bending" Hack (Slave Unit)
-
-To build the Slave unit, you must isolate specific pins from the PCB and reroute them via fly-wires.
-
-1.  **Isolate Pins:** During assembly, bend **Pin 0, 1, and 14** outwards (horizontal). Do not solder them to the PCB headers.
-2.  **The Bridge (Inter-Teensy Connection):**
-    * **UART:** Slave Pin 0 (RX) <-> Master Pin 1 (TX)
-    * **UART:** Slave Pin 1 (TX) <-> Master Pin 0 (RX)
-    * **Audio:** Slave Pin 14 (SPDIF OUT) -> Master Pin 15 (SPDIF IN)
-    * **Ground:** Common Ground is mandatory.
-3.  **The Reroute (Fly-wires):**
-    Restore the broken matrix connections by soldering wires from the PCB holes to unused SD card pins on the Teensy:
-    * PCB Hole 0 -> Teensy **Pin 29**
-    * PCB Hole 1 -> Teensy **Pin 33**
-    * PCB Hole 14 -> Teensy **Pin 37**
+### Réparation de la Matrice (Fly-wires)
+L'isolation des pins 0, 1 et 14 coupe des colonnes de la matrice clavier. Elles sont reroutées ainsi :
+* Colonne 7 (Anciennement Pin 0) ➔ **Pin 33**
+* Colonne 6 (Anciennement Pin 1) ➔ **Pin 37**
+* Colonne 9 (Anciennement Pin 14) ➔ **Pin 38**
 
 ---
 
-## 🎹 Firmware Modules
+## 🎹 Mapping des Touches (Mode Groovebox)
 
-### 1. Firmware Slave (Controller)
-Located in `/firmware_slave`.
-* **Based on:** LMN-3 Firmware.
-* **Modifications:**
-    * Removed USB-MIDI / Added High-Speed Serial MIDI (2 Mbps).
-    * Added `AudioSynthWaveform` + `AudioOutputSPDIF3` (Pin 14).
-    * Implemented raw binary protocol for Joystick (X/Y/Btn) over Serial.
-    * Remapped Matrix Columns in `config.h` to match the hardware hack.
+L'interface est divisée en zones fonctionnelles :
+* **Zone Rythme (Haut Gauche 4x4)** : Déclencheurs MIDI (Canal 10).
+* **Zone Mélodie (2 Rangées du bas)** : Clavier chromatique (Canal 1).
+* **Zone Commandes (L-Shape Droite)** : Octave +/-, Shift, Mode, Menus, Transport.
+* **Encodeurs** :
+    * 1-3 : Paramètres de performance (Cutoff, Reso, FX).
+    * 4 (Droite) : Navigation Système (Rotation = Scroll, Click = Enter).
 
-### 2. Firmware Master (Engine)
-Located in `/firmware_master`.
-* **Based on:** MicroDexed-touch.
-* **Features:**
-    * `AsyncAudioInputSPDIF3` to sync Slave audio (ASRC).
-    * Peanut-GB integration for emulation.
-    * Global Mixer (FM Synth + Emulator + Aux Input).
+## 🛠 Installation
 
----
-
-## 🛠️ Protocols
-
-**Serial Communication (Pins 0/1):**
-* **Baud Rate:** 2,000,000 (2 Mbps).
-* **Format:**
-    * Standard MIDI messages (NoteOn, CC) via `Control_Surface`.
-    * Custom Binary Packet for Joystick: `[0xFF, X, Y, Btn]`.
-
-**Audio Transport:**
-* S/PDIF over TTL (3.3V) via Pin 14->15.
-* Sample Rate: 44.1 kHz.
-
----
-
-## Credits
-* **LMN-3:** Fundamental Frequency
-* **Teensy Audio Library:** Paul Stoffregen
-* **Control Surface:** tttapa
-* **MicroDexed-touch:** Holger Wirtz
-* **Peanut-GB:** deltabeard
+Le projet utilise **PlatformIO**.
+1.  Ouvrir le dossier dans VSCode avec l'extension PlatformIO.
+2.  Sélectionner l'environnement :
+    * `env:totem_master` pour le Teensy Audio.
+    * `env:totem_slave` pour le Teensy Contrôleur.
+3.  Upload via USB (En cas de bug Esclave, maintenir le bouton Encodeur 4 au démarrage pour le mode Diagnostic).

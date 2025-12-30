@@ -1,5 +1,6 @@
 /*
  * PROJET TOTEM - FIRMWARE ESCLAVE (CONTROLLER)
+ * Based on the LMN-3 Project by fundamental.frequency.
  * --------------------------------------------
  * ATTENTION : CE FIRMWARE NECESSITE UNE MODIFICATION PHYSIQUE DU PCB LMN-3 !
  * TABLEAU DE CABLAGE (PIN MAPPING) :
