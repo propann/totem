@@ -1,62 +1,86 @@
+/*
+ * PROJET TOTEM - FIRMWARE ESCLAVE (CONTROLLER)
+ * --------------------------------------------
+ * ATTENTION : CE FIRMWARE NECESSITE UNE MODIFICATION PHYSIQUE DU PCB LMN-3 !
+ * * TABLEAU DE CABLAGE (PIN MAPPING) :
+ * -------------------------------------------------------------------------
+ * FONCTION          | SIGNAL    | PIN TEENSY ORIGINE | ACTION PHYSIQUE  | DESTINATION / PIN MODIFIEE
+ * ------------------|-----------|--------------------|------------------|---------------------------
+ * Liaison UART RX   | RX1       | 0                  | PLIER (Ne pas souder) | -> Vers Maître TX (Pin 1)
+ * Liaison UART TX   | TX1       | 1                  | PLIER (Ne pas souder) | -> Vers Maître RX (Pin 0)
+ * Audio S/PDIF      | OUT       | 14                 | PLIER (Ne pas souder) | -> Vers Maître Pin 15
+ * ------------------|-----------|--------------------|------------------|---------------------------
+ * Matrice (Répar.)  | COL_7     | 0 (Conflit)        | FLY-WIRE (Fil)   | -> Pin 33
+ * Matrice (Répar.)  | COL_6     | 1 (Conflit)        | FLY-WIRE (Fil)   | -> Pin 37
+ * Matrice (Répar.)  | COL_9     | 14 (Conflit)       | FLY-WIRE (Fil)   | -> Pin 38
+ * ------------------|-----------|--------------------|------------------|---------------------------
+ * Ecran OLED        | SDA       | 18                 | Câblage Direct   | -> Ecran SDA
+ * Ecran OLED        | SCL       | 19                 | Câblage Direct   | -> Ecran SCL
+ * Joystick (Natif)  | AXE X     | 15 (A1)            | PCB LMN-3 Std    | (Pitchbend Origine)
+ * -------------------------------------------------------------------------
+ */
+
 #include <Arduino.h>
 #include <config.h>
 #include <Control_Surface.h>
+#include <Audio.h>
+#include <U8g2lib.h>
 #include <Wire.h>
 #include <SPI.h>
-#include "SynthEngine.h"
 
 // =========================================================
 // 1. CONFIGURATION MIDI & SERIE (2 Mbps)
 // =========================================================
-HardwareSerialMIDI_Interface serialmidi = {Serial1, 2000000};
+HardwareSerialMIDI_Interface midi = {Serial1, 2000000};
 
 // =========================================================
-// 2. LOGIQUE JOYSTICK
+// 2. OBJETS AUDIO & OLED
+// =========================================================
+AudioOutputSPDIF3 spdif;
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+// =========================================================
+// 3. LOGIQUE JOYSTICK & OLED
 // =========================================================
 unsigned long lastJoySend = 0;
+unsigned long lastOledUpdate = 0;
+int lastJoyRaw = 0;
 
 // =========================================================
-// 3. CALLBACKS (Lien Matrice -> Moteur Audio)
+// 4. CALLBACKS (Lien Matrice -> Sortie MIDI)
 // =========================================================
 // Cette classe intercepte les notes jouées sur la matrice pour
-// piloter le synthé local (SynthEngine) en plus d'envoyer le MIDI.
+// envoyer le MIDI série uniquement.
 
 class HybridNoteCallbacks : public MIDIOutputElement {
  public:
   HybridNoteCallbacks() {}
 
   void sendNoteOn(MIDIAddress address, uint8_t velocity) override {
-      serialmidi.sendNoteOn(address, velocity);
-
-      if (address.getChannel() == CHANNEL_1) {
-          playSlaveNote(address.getAddress(), velocity);
-      }
+      midi.sendNoteOn(address, velocity);
   }
 
   void sendNoteOff(MIDIAddress address, uint8_t velocity) override {
-      serialmidi.sendNoteOff(address, velocity);
-      if (address.getChannel() == CHANNEL_1) {
-          playSlaveNote(address.getAddress(), 0);
-      }
+      midi.sendNoteOff(address, velocity);
   }
 
-  void sendCC(MIDIAddress address, uint8_t value) override { serialmidi.sendCC(address, value); }
-  void sendKP(MIDIAddress address, uint8_t value) override { serialmidi.sendKP(address, value); }
-  void sendPC(MIDIAddress address) override { serialmidi.sendPC(address); }
-  void sendCP(MIDIAddress address, uint8_t value) override { serialmidi.sendCP(address, value); }
-  void sendPB(MIDIAddress address, uint16_t value) override { serialmidi.sendPB(address, value); }
+  void sendCC(MIDIAddress address, uint8_t value) override { midi.sendCC(address, value); }
+  void sendKP(MIDIAddress address, uint8_t value) override { midi.sendKP(address, value); }
+  void sendPC(MIDIAddress address) override { midi.sendPC(address); }
+  void sendCP(MIDIAddress address, uint8_t value) override { midi.sendCP(address, value); }
+  void sendPB(MIDIAddress address, uint16_t value) override { midi.sendPB(address, value); }
   void sendSysEx(const uint8_t *data, uint16_t length, bool cn = false) override {
-      serialmidi.sendSysEx(data, length, cn);
+      midi.sendSysEx(data, length, cn);
   }
   void sendRealTime(uint8_t message, bool cn = false) override {
-      serialmidi.sendRealTime(message, cn);
+      midi.sendRealTime(message, cn);
   }
 };
 
 HybridNoteCallbacks hybridSender;
 
 // =========================================================
-// 4. CONFIGURATION LMN-3 (Objets Standards)
+// 5. CONFIGURATION LMN-3 (Objets Standards)
 // =========================================================
 
 CCRotaryEncoder enc1 = {
@@ -194,56 +218,62 @@ void updatePlusMinus() {
 }
 
 // =========================================================
-// 5. SETUP & LOOP
+// 6. SETUP & LOOP
 // =========================================================
 
 void setup() {
-    // A. Démarrer le Moteur Audio Local
-    setupSynthEngine();
+    // A. Audio (S/PDIF)
+    AudioMemory(10);
 
-    // B. Démarrer le Joystick
-    pinMode(JOY_BTN_PIN, INPUT_PULLUP);
+    // B. Série (MIDI)
     Serial1.begin(2000000);
 
-    // C. Démarrer Control Surface (Scanner Matrice + Série)
-    Control_Surface.begin();
+    // C. OLED
+    u8g2.begin();
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 14, "PROJET TOTEM");
+    u8g2.drawStr(0, 30, "MODE ESCLAVE");
+    u8g2.drawStr(0, 46, "INIT...");
+    u8g2.sendBuffer();
+    delay(2000);
 
-    // D. Feedback Sonore de Démarrage (Test S/PDIF)
-    playSlaveNote(60, 127);
-    delay(100);
-    playSlaveNote(64, 127);
-    delay(100);
-    playSlaveNote(67, 127);
-    delay(100);
-    playSlaveNote(0, 0);
+    // D. Démarrer Control Surface (Scanner Matrice + Série)
+    Control_Surface.begin();
 }
 
 void loop() {
     // 1. Gestion du LMN-3 (Matrice -> MIDI Série)
     Control_Surface.loop();
 
-    // 2. Gestion du Moteur Audio (Test : Joystick X modifie la fréquence)
-    if (millis() - lastJoySend > 10) {
-        lastJoySend = millis();
+    // 2. Gestion du Joystick (toutes les 10 ms)
+    unsigned long now = millis();
+    if (now - lastJoySend >= 10) {
+        lastJoySend = now;
 
-        int xRaw = analogRead(JOY_X_PIN);
-        int yRaw = analogRead(JOY_Y_PIN);
-        int btn = !digitalRead(JOY_BTN_PIN);
+        lastJoyRaw = analogRead(JOY_PIN_MAIN);
+        uint8_t xMapped = static_cast<uint8_t>(map(lastJoyRaw, 0, 1023, 0, 254));
 
         // Envoi protocole Totem vers Maître
         Serial1.write(0xFF);
-        Serial1.write(map(xRaw, 0, 1023, 0, 254));
-        Serial1.write(map(yRaw, 0, 1023, 0, 254));
-        Serial1.write(btn);
+        Serial1.write(xMapped);
+        Serial1.write(static_cast<uint8_t>(127));
+        Serial1.write(static_cast<uint8_t>(0));
+    }
 
-        // Moduler le son LOCAL avec le Joystick (Preuve de concept audio)
-        if (btn) {
-            float freq = static_cast<float>(map(xRaw, 0, 1023, 100, 800));
-            osc1.frequency(freq);
-            ampEnv.noteOn();
-        } else {
-            ampEnv.noteOff();
-        }
+    // 3. Gestion OLED (toutes les 50 ms)
+    if (now - lastOledUpdate >= 50) {
+        lastOledUpdate = now;
+
+        u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_6x12_tr);
+        u8g2.drawStr(0, 12, "TOTEM CTRL");
+        u8g2.drawStr(0, 62, "Connexion: OK");
+
+        int barWidth = map(lastJoyRaw, 0, 1023, 0, 124);
+        u8g2.drawFrame(0, 22, 128, 12);
+        u8g2.drawBox(2, 24, barWidth, 8);
+        u8g2.sendBuffer();
     }
 
     updatePlusMinus();
