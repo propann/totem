@@ -10,20 +10,23 @@
 // ---------------------------------------------------------------------------
 constexpr uint8_t ROWS = 5;
 constexpr uint8_t COLS = 14;
-const uint8_t rowPins[ROWS] = {24, 23, 34, 35, 28};
-const uint8_t colPins[COLS] = {9, 8, 7, 4, 3, 2, 37, 33, 25, 38, 13, 41, 40, 36};
+const uint8_t rowPins[ROWS] = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
+const uint8_t colPins[COLS] = {COL_0, COL_1, COL_2,  COL_3,  COL_4,  COL_5,  COL_6,
+                               COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13};
 
 // Joystick (brut) sur Pin 15 (A1/A15 suivant le repérage Teensy)
-constexpr uint8_t JOY_PIN = 15;
+constexpr uint8_t JOY_PIN = HORIZONTAL_PB_PIN;
 
-// Encodeurs
+// Encodeurs (utilisation du câblage test précédent pour ne pas surcharger la matrice)
 Encoder enc1(5, 6);
 Encoder enc2(26, 27);
 Encoder enc3(29, 30);
 Encoder enc4(31, 32);
 long enc1Last = 0, enc2Last = 0, enc3Last = 0, enc4Last = 0;
 
-// Ecran OLED (I2C 18/19)
+// Ecran OLED (I2C par défaut sur 18/19)
+constexpr uint8_t OLED_SCL = 19;
+constexpr uint8_t OLED_SDA = 18;
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE,
                                          /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
 
