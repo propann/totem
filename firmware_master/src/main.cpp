@@ -1,3 +1,8 @@
+/*
+ * PROJET TOTEM - FIRMWARE MAITRE (ENGINE)
+ * Based on the LMN-3 Project by fundamental.frequency.
+ */
+
 #include <Arduino.h>
 #include "AudioGraph.h"
 

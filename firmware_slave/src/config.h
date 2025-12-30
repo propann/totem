@@ -1,6 +1,17 @@
-#pragma once
+/**
+ * CONFIGURATION HARDWARE ESCLAVE (TOTEM)
+ * Based on the LMN-3 Project by fundamental.frequency.
+ */
+
+#ifndef TOTEM_SLAVE_CONFIG_H
+#define TOTEM_SLAVE_CONFIG_H
 
 #include <Arduino.h>
+
+// --- 1. CONFIGURATION DE L'ECRAN OLED (I2C) ---
+// I2C OLED: SDA=18, SCL=19
+#define OLED_SDA 18
+#define OLED_SCL 19
 
 // =========================================================
 // CONFIGURATION GENERALE
@@ -12,7 +23,9 @@ const int MIDI_BAUDRATE = 2000000;
 const bool ENABLE_SPDIF = true;
 
 // Joystick
-const int PIN_JOY_MAIN = A1; // A1 = Pin 15 physique
+const int PIN_JOYSTICK_X = A1; // A1 = Pin 15 physique
+const int PIN_JOYSTICK_Y = A0;
+const int PIN_JOY_MAIN = PIN_JOYSTICK_X;
 
 // Pins hack LMN-3 (S/PDIF & UART déportés)
 const int PIN_UART_RX = 0;
@@ -30,6 +43,9 @@ const int ROW_3 = 35;
 const int ROW_4 = 28;
 
 // Col Pins (CABLAGE MODIFIE)
+// Colonne 7 (Anciennement Pin 0)  -> Pin 33
+// Colonne 6 (Anciennement Pin 1)  -> Pin 37
+// Colonne 9 (Anciennement Pin 14) -> Pin 38
 const int COL_0 = 9;
 const int COL_1 = 8;
 const int COL_2 = 7;
@@ -55,3 +71,5 @@ const int ENC4_PIN_B = 32;
 
 // Bouton encodeur 4 (utilise pour activer le mode diagnostic)
 const int ENC4_BUTTON_PIN = 39;
+
+#endif
