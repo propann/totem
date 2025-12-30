@@ -3,15 +3,18 @@
 
 #include <Arduino.h>
 
-// --- HARDWARE HACK LMN-3 (SLAVE) ---
-// Joystick
-const int HORIZONTAL_PB_PIN = A15; // Pin 15
+// --- PÉRIPHÉRIQUES GLOBAUX ---
+const int HORIZONTAL_PB_PIN = A15; // Joystick (Pin 15)
 
 // Encodeurs (Pins Standard LMN-3)
-const int ENCODER_1 = 3;
-const int ENCODER_2 = 9;
-const int ENCODER_3 = 14;
-const int ENCODER_4 = 15;
+const int ENCODER1_PIN_A = 5;
+const int ENCODER1_PIN_B = 6;
+const int ENCODER2_PIN_A = 26;
+const int ENCODER2_PIN_B = 27;
+const int ENCODER3_PIN_A = 29;
+const int ENCODER3_PIN_B = 30;
+const int ENCODER4_PIN_A = 31;
+const int ENCODER4_PIN_B = 32;
 
 // Note: Les boutons des encodeurs sont gérés dans la matrice CC
 
@@ -44,7 +47,7 @@ const int PLUS_BUTTON = 118;
 const int MINUS_BUTTON = 119;
 const int DUMMY = 31;
 
-// --- MATRICE CORRIGÉE (HACK 33/37/38) ---
+// --- CONFIGURATION MATRICE (HACK "EASY-WIRE") ---
 
 // Row Pins (Standard)
 const int ROW_0 = 24;

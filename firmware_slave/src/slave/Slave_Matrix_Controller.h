@@ -13,12 +13,12 @@
 #pragma GCC diagnostic pop
 USING_CS_NAMESPACE;
 
-class TotemMatrix {
+class LegacyMatrix {
   public:
     static constexpr uint8_t kRows = 5;
     static constexpr uint8_t kCols = 10;
 
-    TotemMatrix();
+    LegacyMatrix();
     void begin();
     void update();
 

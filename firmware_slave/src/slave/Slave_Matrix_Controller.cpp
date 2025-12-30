@@ -11,18 +11,18 @@
 
 // Définition CORRIGÉE pour le Mod Totem (Fly-wires)
 // Ne JAMAIS remettre 0, 1 ou 14 ici !
-const PinList<TotemMatrix::kCols> TotemMatrix::colPins = {
+const PinList<LegacyMatrix::kCols> LegacyMatrix::colPins = {
     COL_0, COL_1, COL_2, COL_3, COL_4, COL_5,
     COL_6, // Pin 37 (ex-TX1 isolée)
     COL_7, // Pin 33 (ex-RX1 isolée)
     COL_8,
     COL_9, // Pin 38 (ex-SPDIF isolée)
 };
-const PinList<TotemMatrix::kRows> TotemMatrix::rowPins = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
+const PinList<LegacyMatrix::kRows> LegacyMatrix::rowPins = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
 
 // Mapping notes : drums (4x4) en canal 10, reste en canal 1.
-const AddressMatrix<TotemMatrix::kRows, TotemMatrix::kCols>
-    TotemMatrix::addressMatrix = {{
+const AddressMatrix<LegacyMatrix::kRows, LegacyMatrix::kCols>
+    LegacyMatrix::addressMatrix = {{
         {36, 37, 38, 39, 112, 113, 114, 115, 116, 117}, // Row 0
         {40, 41, 42, 43, 118, 119, 120, 121, 122, 123}, // Row 1
         {44, 45, 46, 47, 106, 107, 108, 109, 110, 111}, // Row 2
@@ -45,18 +45,18 @@ const AddressMatrix<1, 10> kMelodyTop = {{
     {58, 59, 60, 61, 62, 63, 64, 65, 66, 67},
 }};
 
-TotemMatrix::TotemMatrix()
+LegacyMatrix::LegacyMatrix()
     : drums({ROW_0, ROW_1, ROW_2, ROW_3}, {COL_0, COL_1, COL_2, COL_3},
             kDrumNotes,
             CHANNEL_10),
       melodyBottom({ROW_3}, colPins, kMelodyBottom, CHANNEL_1),
       melodyTop({ROW_4}, colPins, kMelodyTop, CHANNEL_1) {}
 
-void TotemMatrix::begin() { Control_Surface.begin(); }
+void LegacyMatrix::begin() { Control_Surface.begin(); }
 
-void TotemMatrix::update() { Control_Surface.loop(); }
+void LegacyMatrix::update() { Control_Surface.loop(); }
 
-const char *TotemMatrix::getNoteName(uint8_t note) {
+const char *LegacyMatrix::getNoteName(uint8_t note) {
     static char name[8];
     static const char *names[12] = {"C",  "C#", "D",  "D#", "E",  "F",
                                     "F#", "G",  "G#", "A",  "A#", "B"};
