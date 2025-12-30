@@ -1,5 +1,8 @@
 #include <Arduino.h>
 const int HORIZONTAL_PB_PIN = A15;
+const int JOY_X_PIN = A16;
+const int JOY_Y_PIN = A17;
+const int JOY_BTN_PIN = 38;
 
 // CC values
 const int ENCODER_1 = 3;
@@ -48,10 +51,10 @@ const int COL_2 = 7;
 const int COL_3 = 4;
 const int COL_4 = 3;
 const int COL_5 = 2;
-const int COL_6 = 1;
-const int COL_7 = 0;
+const int COL_6 = 33;
+const int COL_7 = 29;
 const int COL_8 = 25;
-const int COL_9 = 14;
+const int COL_9 = 37;
 const int COL_10 = 13;
 const int COL_11 = 41;
 const int COL_12 = 40;
