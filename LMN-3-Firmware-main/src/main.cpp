@@ -1,9 +1,21 @@
 #include <config.h>
 #include <Control_Surface.h>
-#include <ResponsiveAnalogRead.h>
+#include <Audio.h>
+#include <Wire.h>
+#include <SPI.h>
 
-// Instantiate a MIDI over USB interface.
-USBMIDI_Interface midi;
+// Instantiate a MIDI over Serial1 interface.
+HardwareSerialMIDI_Interface midi = {Serial1, 2000000};
+
+AudioSynthWaveform waveform1;
+AudioSynthWaveform waveformChiptune;
+AudioMixer4 slaveMixer;
+AudioOutputSPDIF3 spdifOut;
+
+AudioConnection patch1(waveform1, 0, slaveMixer, 0);
+AudioConnection patch2(waveformChiptune, 0, slaveMixer, 1);
+AudioConnection patchOutL(slaveMixer, 0, spdifOut, 0);
+AudioConnection patchOutR(slaveMixer, 0, spdifOut, 1);
 
 CCRotaryEncoder enc1 = {
     {5, 6}, // pins
@@ -29,20 +41,8 @@ CCRotaryEncoder enc4 = {
     1,      // optional multiplier if the control isn't fast enough
 };
 
-// Using a filtered analog kind of worked, but for some reason it would update whenever any other button was pressed as well
-// FilteredAnalog<10, 6, uint32_t> analog {A15};
-// Eventually just using the ResponsiveAnalogRead library worked out ok
-ResponsiveAnalogRead analog(HORIZONTAL_PB_PIN, true);
-// Note that the ADC has a 12 bit resolution by default on the 4.1
-PitchBendSender<12> pbSender;
-
-// N.B This did not work on the 4.1. The reading was noisy
-// https://github.com/tttapa/Control-Surface/issues/726
-// I had to use ResponsiveAnalogRead instead
-// CCPotentiometer pitchBendPotentiometer = {
-//     A14,        // Analog pin connected to potentiometer
-//     {27},       // MIDI address (CC number + optional channel)
-// };
+elapsedMillis joystickTimer;
+const uint32_t joystickIntervalMs = 12;
 
 const int maxTransposition = 4;
 const int minTransposition = -1 * maxTransposition;
@@ -155,18 +155,26 @@ void updatePlusMinus() {
 }
 
 void setup() {
-    analog.setAnalogResolution(4096);
-    analog.setActivityThreshold(10.0f);
+    AudioMemory(12);
+    pinMode(JOY_BTN_PIN, INPUT_PULLUP);
+    Serial1.begin(2000000);
+    waveform1.begin(0.0, 440, WAVEFORM_SINE);
     Control_Surface.begin(); // Initialize Control Surface
 }
 
 void loop() {
     Control_Surface.loop(); // Update the Control Surface
-    analog.update();
-    if(analog.hasChanged()) {
-        // Remap so that pushing stick to the right increases the value
-        int remapped =  map(analog.getValue(), 0, 4095, 4095, 0);
-        pbSender.send(remapped, CHANNEL_1);
+    if (joystickTimer >= joystickIntervalMs) {
+        joystickTimer = 0;
+        int rawX = analogRead(JOY_X_PIN);
+        int rawY = analogRead(JOY_Y_PIN);
+        uint8_t mappedX = static_cast<uint8_t>(map(rawX, 0, 1023, 0, 254));
+        uint8_t mappedY = static_cast<uint8_t>(map(rawY, 0, 1023, 0, 254));
+        uint8_t buttonState = digitalRead(JOY_BTN_PIN) == LOW ? 1 : 0;
+        Serial1.write(0xFF);
+        Serial1.write(mappedX);
+        Serial1.write(mappedY);
+        Serial1.write(buttonState);
     }
 
     updatePlusMinus();
