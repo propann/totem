@@ -43,9 +43,9 @@ const int ROW_3 = 35;
 const int ROW_4 = 28;
 
 // Col Pins (CABLAGE MODIFIE)
-// Colonne 7 (Anciennement Pin 0)  -> Pin 33
-// Colonne 6 (Anciennement Pin 1)  -> Pin 37
-// Colonne 9 (Anciennement Pin 14) -> Pin 38
+// Col 6 (ex TX1/1)   -> Pin 37  ⚠️ isolée d'origine
+// Col 7 (ex RX1/0)   -> Pin 33  ⚠️ isolée d'origine
+// Col 9 (ex SPDIF14) -> Pin 38  ⚠️ isolée d'origine
 const int COL_0 = 9;
 const int COL_1 = 8;
 const int COL_2 = 7;
