@@ -1,48 +1,87 @@
+#include <Arduino.h>
 #include <config.h>
 #include <Control_Surface.h>
-#include <Audio.h>
 #include <Wire.h>
 #include <SPI.h>
+#include "SynthEngine.h"
 
-// Instantiate a MIDI over Serial1 interface.
-HardwareSerialMIDI_Interface midi = {Serial1, 2000000};
+// =========================================================
+// 1. CONFIGURATION MIDI & SERIE (2 Mbps)
+// =========================================================
+HardwareSerialMIDI_Interface serialmidi = {Serial1, 2000000};
 
-AudioSynthWaveform waveform1;
-AudioSynthWaveform waveformChiptune;
-AudioMixer4 slaveMixer;
-AudioOutputSPDIF3 spdifOut;
+// =========================================================
+// 2. LOGIQUE JOYSTICK
+// =========================================================
+unsigned long lastJoySend = 0;
 
-AudioConnection patch1(waveform1, 0, slaveMixer, 0);
-AudioConnection patch2(waveformChiptune, 0, slaveMixer, 1);
-AudioConnection patchOutL(slaveMixer, 0, spdifOut, 0);
-AudioConnection patchOutR(slaveMixer, 0, spdifOut, 1);
+// =========================================================
+// 3. CALLBACKS (Lien Matrice -> Moteur Audio)
+// =========================================================
+// Cette classe intercepte les notes jouées sur la matrice pour
+// piloter le synthé local (SynthEngine) en plus d'envoyer le MIDI.
+
+class HybridNoteCallbacks : public MIDIOutputElement {
+ public:
+  HybridNoteCallbacks() {}
+
+  void sendNoteOn(MIDIAddress address, uint8_t velocity) override {
+      serialmidi.sendNoteOn(address, velocity);
+
+      if (address.getChannel() == CHANNEL_1) {
+          playSlaveNote(address.getAddress(), velocity);
+      }
+  }
+
+  void sendNoteOff(MIDIAddress address, uint8_t velocity) override {
+      serialmidi.sendNoteOff(address, velocity);
+      if (address.getChannel() == CHANNEL_1) {
+          playSlaveNote(address.getAddress(), 0);
+      }
+  }
+
+  void sendCC(MIDIAddress address, uint8_t value) override { serialmidi.sendCC(address, value); }
+  void sendKP(MIDIAddress address, uint8_t value) override { serialmidi.sendKP(address, value); }
+  void sendPC(MIDIAddress address) override { serialmidi.sendPC(address); }
+  void sendCP(MIDIAddress address, uint8_t value) override { serialmidi.sendCP(address, value); }
+  void sendPB(MIDIAddress address, uint16_t value) override { serialmidi.sendPB(address, value); }
+  void sendSysEx(const uint8_t *data, uint16_t length, bool cn = false) override {
+      serialmidi.sendSysEx(data, length, cn);
+  }
+  void sendRealTime(uint8_t message, bool cn = false) override {
+      serialmidi.sendRealTime(message, cn);
+  }
+};
+
+HybridNoteCallbacks hybridSender;
+
+// =========================================================
+// 4. CONFIGURATION LMN-3 (Objets Standards)
+// =========================================================
 
 CCRotaryEncoder enc1 = {
     {5, 6}, // pins
-    {ENCODER_1},         // MIDI address (CC number + optional channel)
-    1,      // optional multiplier if the control isn't fast enough
+    {ENCODER_1}, // MIDI address (CC number + optional channel)
+    1, // optional multiplier if the control isn't fast enough
 };
 
 CCRotaryEncoder enc2 = {
     {26, 27}, // pins
-    {ENCODER_2},         // MIDI address (CC number + optional channel)
-    1,      // optional multiplier if the control isn't fast enough
+    {ENCODER_2}, // MIDI address (CC number + optional channel)
+    1, // optional multiplier if the control isn't fast enough
 };
 
 CCRotaryEncoder enc3 = {
     {29, 30}, // pins
-    {ENCODER_3},         // MIDI address (CC number + optional channel)
-    1,      // optional multiplier if the control isn't fast enough
+    {ENCODER_3}, // MIDI address (CC number + optional channel)
+    1, // optional multiplier if the control isn't fast enough
 };
 
 CCRotaryEncoder enc4 = {
     {31, 32}, // pins
-    {ENCODER_4},         // MIDI address (CC number + optional channel)
-    1,      // optional multiplier if the control isn't fast enough
+    {ENCODER_4}, // MIDI address (CC number + optional channel)
+    1, // optional multiplier if the control isn't fast enough
 };
-
-elapsedMillis joystickTimer;
-const uint32_t joystickIntervalMs = 12;
 
 const int maxTransposition = 4;
 const int minTransposition = -1 * maxTransposition;
@@ -51,15 +90,15 @@ Transposer<minTransposition, maxTransposition>transposer(transpositionSemitones)
 
 const AddressMatrix<2, 14> noteAddresses = {{
                                                 {1, 54, 56, 58, 1, 61, 63, 1, 66, 68, 70, 1, 73, 75},
-                                                {53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76},  
+                                                {53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76},
                                             }};
 
 Bankable::NoteButtonMatrix<2, 14> noteButtonMatrix = {
     transposer,
     {ROW_3, ROW_4}, // row pins
-    {COL_0, COL_1, COL_2, COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13},    // column pins
-    noteAddresses,    // address matrix
-    CHANNEL_1,    // channel and cable number
+    {COL_0, COL_1, COL_2, COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13}, // column pins
+    noteAddresses, // address matrix
+    CHANNEL_1, // channel and cable number
 };
 
 // Note that plus and minus buttons need special care since they also control the transposer
@@ -73,9 +112,9 @@ const AddressMatrix<3, 11> ccAddresses = {{
 
 CCButtonMatrix<3, 11> ccButtonmatrix = {
     {ROW_0, ROW_1, ROW_2}, // row pins
-    {COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13},    // column pins
-    ccAddresses,    // address matrix
-    CHANNEL_1,    // channel and cable number
+    {COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13}, // column pins
+    ccAddresses, // address matrix
+    CHANNEL_1, // channel and cable number
 };
 
 bool plusPressed = false;
@@ -94,7 +133,7 @@ void updatePlusMinus() {
         // Check if plus was released
         if (ccButtonmatrix.getPrevState(3, 0) == 0) {
             plusPressed = true;
-            
+
         } else {
             if (plusPressed) {
                 if (transposer.getTransposition() < maxTransposition) {
@@ -131,7 +170,7 @@ void updatePlusMinus() {
                 plusPressed = true;
                 Control_Surface.sendControlChange(MIDIAddress(PLUS_BUTTON, CHANNEL_1), 127);
             }
-            
+
         } else {
             if (plusPressed) {
                 plusPressed = false;
@@ -151,30 +190,60 @@ void updatePlusMinus() {
                 Control_Surface.sendControlChange(MIDIAddress(MINUS_BUTTON, CHANNEL_1), 0);
             }
         }
-    } 
+    }
 }
 
+// =========================================================
+// 5. SETUP & LOOP
+// =========================================================
+
 void setup() {
-    AudioMemory(12);
+    // A. Démarrer le Moteur Audio Local
+    setupSynthEngine();
+
+    // B. Démarrer le Joystick
     pinMode(JOY_BTN_PIN, INPUT_PULLUP);
     Serial1.begin(2000000);
-    waveform1.begin(0.0, 440, WAVEFORM_SINE);
-    Control_Surface.begin(); // Initialize Control Surface
+
+    // C. Démarrer Control Surface (Scanner Matrice + Série)
+    Control_Surface.begin();
+
+    // D. Feedback Sonore de Démarrage (Test S/PDIF)
+    playSlaveNote(60, 127);
+    delay(100);
+    playSlaveNote(64, 127);
+    delay(100);
+    playSlaveNote(67, 127);
+    delay(100);
+    playSlaveNote(0, 0);
 }
 
 void loop() {
-    Control_Surface.loop(); // Update the Control Surface
-    if (joystickTimer >= joystickIntervalMs) {
-        joystickTimer = 0;
-        int rawX = analogRead(JOY_X_PIN);
-        int rawY = analogRead(JOY_Y_PIN);
-        uint8_t mappedX = static_cast<uint8_t>(map(rawX, 0, 1023, 0, 254));
-        uint8_t mappedY = static_cast<uint8_t>(map(rawY, 0, 1023, 0, 254));
-        uint8_t buttonState = digitalRead(JOY_BTN_PIN) == LOW ? 1 : 0;
+    // 1. Gestion du LMN-3 (Matrice -> MIDI Série)
+    Control_Surface.loop();
+
+    // 2. Gestion du Moteur Audio (Test : Joystick X modifie la fréquence)
+    if (millis() - lastJoySend > 10) {
+        lastJoySend = millis();
+
+        int xRaw = analogRead(JOY_X_PIN);
+        int yRaw = analogRead(JOY_Y_PIN);
+        int btn = !digitalRead(JOY_BTN_PIN);
+
+        // Envoi protocole Totem vers Maître
         Serial1.write(0xFF);
-        Serial1.write(mappedX);
-        Serial1.write(mappedY);
-        Serial1.write(buttonState);
+        Serial1.write(map(xRaw, 0, 1023, 0, 254));
+        Serial1.write(map(yRaw, 0, 1023, 0, 254));
+        Serial1.write(btn);
+
+        // Moduler le son LOCAL avec le Joystick (Preuve de concept audio)
+        if (btn) {
+            float freq = static_cast<float>(map(xRaw, 0, 1023, 100, 800));
+            osc1.frequency(freq);
+            ampEnv.noteOn();
+        } else {
+            ampEnv.noteOff();
+        }
     }
 
     updatePlusMinus();
