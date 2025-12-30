@@ -14,11 +14,11 @@ class TotemMatrix {
     static constexpr uint8_t kRows = 5;
     static constexpr uint8_t kCols = 10;
 
-    static const CS::PinList<kRows> rowPins;
-    static const CS::PinList<kCols> colPins;
+    static const cs::PinList<kRows> rowPins;
+    static const cs::PinList<kCols> colPins;
 
     // Tableau global d'adressage (notes système incluses pour commandes).
-    static const CS::AddressMatrix<kRows, kCols> addressMatrix;
+    static const cs::AddressMatrix<kRows, kCols> addressMatrix;
 
     TotemMatrix();
     void begin();
@@ -26,9 +26,9 @@ class TotemMatrix {
 
   private:
     // 4x4 en haut à gauche : drums (Channel 10)
-    CS::NoteButtonMatrix<4, 4> drumsMatrix;
+    cs::NoteButtonMatrix<4, 4> drumsMatrix;
     // Ligne du bas : mélodie (Channel 1)
-    CS::NoteButtonMatrix<1, 10> melodyMatrix;
+    cs::NoteButtonMatrix<1, 10> melodyMatrix;
     // Zone commandes (haut droite) : notes système (Channel 1)
-    CS::NoteButtonMatrix<4, 6> commandMatrix;
+    cs::NoteButtonMatrix<4, 6> commandMatrix;
 };

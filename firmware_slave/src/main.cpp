@@ -6,8 +6,8 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE,
                                         /* clock=*/ 19, /* data=*/ 18);
 
 // 2. SETUP MATRICE (Hack Pinout)
-const pin_t colPins[] = {9, 8, 7, 4, 3, 2, 37, 33, 25, 38};
-const pin_t rowPins[] = {24, 23, 34, 35, 28};
+const uint8_t colPins[] = {9, 8, 7, 4, 3, 2, 37, 33, 25, 38};
+const uint8_t rowPins[] = {24, 23, 34, 35, 28};
 
 static constexpr uint8_t ROWS = sizeof(rowPins) / sizeof(rowPins[0]);
 static constexpr uint8_t COLS = sizeof(colPins) / sizeof(colPins[0]);
