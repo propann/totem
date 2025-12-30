@@ -29,6 +29,8 @@
 #include <Wire.h>
 #include <MIDI.h>
 #include <SD.h>
+#include <SPI.h>
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI_Slave);
 
 #ifdef  MCP_CV
 #include "MCP4728.h"  // 4-Channel DAC 12Bit mcp4728
@@ -41,7 +43,6 @@ MCP4728 dac;
 SDClass SD_EXTERNAL;
 #endif
 
-#include <SPI.h>
 #include "filemanager.h"
 
 #if defined RGB_ENCODERS
@@ -1117,6 +1118,9 @@ extern void updateGranularFilters();
 FLASHMEM void setup()
 {
 
+  Serial1.begin(2000000);
+  MIDI_Slave.begin(MIDI_CHANNEL_OMNI);
+  MIDI_Slave.turnThruOff();
 
   //**************************
   //Reset QSPI clock from 88Mhz to 132 Mhz.
@@ -2747,8 +2751,38 @@ FLASHMEM void display_granular_status()
 }
 #endif
 
+void pollSerialMidi()
+{
+  while (MIDI_Slave.read())
+  {
+    const midi::MidiType type = MIDI_Slave.getType();
+    const byte channel = MIDI_Slave.getChannel();
+    const byte data1 = MIDI_Slave.getData1();
+    const byte data2 = MIDI_Slave.getData2();
+
+    switch (type)
+    {
+    case midi::NoteOn:
+      if (data2 == 0)
+        handleNoteOff(channel, data1, data2, 0);
+      else
+        handleNoteOnInput(channel, data1, data2, 0);
+      break;
+    case midi::NoteOff:
+      handleNoteOff(channel, data1, data2, 0);
+      break;
+    case midi::ControlChange:
+      handleControlChange(channel, data1, data2);
+      break;
+    default:
+      break;
+    }
+  }
+}
+
 void loop()
 {
+  pollSerialMidi();
   // Chords Detection
 // Handle chord timeout
   if (chord_note_count > 0 && since_last_note > CHORD_CAPTURE_WINDOW) {

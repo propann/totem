@@ -5,6 +5,8 @@
 
 // --- PÉRIPHÉRIQUES GLOBAUX ---
 const int HORIZONTAL_PB_PIN = A15; // Joystick (Pin 15)
+constexpr const char SLAVE_VERSION[] = "Totem Slave v1";
+constexpr const char SLAVE_HACK_TAG[] = "Easy-Wire 16/17/33";
 
 // Encodeurs (Pins Standard LMN-3)
 const int ENCODER1_PIN_A = 5;

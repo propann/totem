@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <Encoder.h>
 #include <Control_Surface.h>
-#include <MIDI_Outputs/CCRotaryEncoder.hpp>
+#include <Encoder.h>
 
 #include "config.h"
 
@@ -20,6 +20,7 @@ class TotemMatrix {
     // Retourne true si une touche est pressée (transition OFF->ON) et remplit
     // noteName avec le nom humain (ex: C3).
     bool update(char *noteName, size_t len);
+    bool pollEncoder(uint8_t &id, long &value);
 
   private:
     bool scanMatrix(uint8_t &noteNumber);
@@ -27,10 +28,11 @@ class TotemMatrix {
 
     // Matrice MIDI (utilisée par Control Surface pour envoyer du MIDI si besoin)
     NoteButtonMatrix<kRows, kCols> matrix;
-    CCRotaryEncoder enc1;
-    CCRotaryEncoder enc2;
-    CCRotaryEncoder enc3;
-    CCRotaryEncoder enc4;
+    Encoder enc1;
+    Encoder enc2;
+    Encoder enc3;
+    Encoder enc4;
 
     bool prevState[kRows][kCols] = {};
+    long encLast[4] = {};
 };

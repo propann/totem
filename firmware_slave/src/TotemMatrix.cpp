@@ -4,6 +4,9 @@
 
 USING_CS_NAMESPACE;
 
+extern USBMIDI_Interface midi_usb;
+extern HardwareSerialMIDI_Interface midi_serial;
+
 // Pins list
 const PinList<TotemMatrix::kRows> kRowPins = {ROW_0, ROW_1, ROW_2, ROW_3,
                                               ROW_4};
@@ -23,10 +26,15 @@ const AddressMatrix<TotemMatrix::kRows, TotemMatrix::kCols> kNoteMap = {{
 
 TotemMatrix::TotemMatrix()
     : matrix(kRowPins, kColPins, kNoteMap, CHANNEL_1),
-      enc1({ENCODER1_PIN_A, ENCODER1_PIN_B}, {16, CHANNEL_1}),
-      enc2({ENCODER2_PIN_A, ENCODER2_PIN_B}, {17, CHANNEL_1}),
-      enc3({ENCODER3_PIN_A, ENCODER3_PIN_B}, {18, CHANNEL_1}),
-      enc4({ENCODER4_PIN_A, ENCODER4_PIN_B}, {19, CHANNEL_1}) {}
+      enc1(ENCODER1_PIN_A, ENCODER1_PIN_B),
+      enc2(ENCODER2_PIN_A, ENCODER2_PIN_B),
+      enc3(ENCODER3_PIN_A, ENCODER3_PIN_B),
+      enc4(ENCODER4_PIN_A, ENCODER4_PIN_B) {
+    encLast[0] = enc1.read();
+    encLast[1] = enc2.read();
+    encLast[2] = enc3.read();
+    encLast[3] = enc4.read();
+}
 
 void TotemMatrix::begin() {
     Control_Surface.begin();
@@ -50,9 +58,16 @@ bool TotemMatrix::scanMatrix(uint8_t &noteNumber) {
 
         for (uint8_t c = 0; c < kCols; ++c) {
             const bool pressed = digitalRead(kColPins[c]) == LOW;
+            const uint8_t note = kNoteMap[r][c];
+            const MIDIAddress addr{note, CHANNEL_1};
             if (pressed && !prevState[r][c]) {
-                noteNumber = kNoteMap[r][c];
+                midi_serial.sendNoteOn(addr, 0x7F);
+                midi_usb.sendNoteOn(addr, 0x7F);
+                noteNumber = note;
                 triggered = true;
+            } else if (!pressed && prevState[r][c]) {
+                midi_serial.sendNoteOff(addr, 0x00);
+                midi_usb.sendNoteOff(addr, 0x00);
             }
             prevState[r][c] = pressed;
         }
@@ -72,6 +87,19 @@ bool TotemMatrix::update(char *noteName, size_t len) {
         noteNameFromNumber(noteNumber, noteName, len);
     }
     return pressed;
+}
+
+bool TotemMatrix::pollEncoder(uint8_t &id, long &value) {
+    const long vals[4] = {enc1.read(), enc2.read(), enc3.read(), enc4.read()};
+    for (uint8_t i = 0; i < 4; ++i) {
+        if (vals[i] != encLast[i]) {
+            id = i + 1;
+            value = vals[i];
+            encLast[i] = vals[i];
+            return true;
+        }
+    }
+    return false;
 }
 
 void TotemMatrix::noteNameFromNumber(uint8_t note, char *buf, size_t len) const {
