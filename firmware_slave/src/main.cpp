@@ -2,279 +2,354 @@
  * PROJET TOTEM - FIRMWARE ESCLAVE (CONTROLLER)
  * --------------------------------------------
  * ATTENTION : CE FIRMWARE NECESSITE UNE MODIFICATION PHYSIQUE DU PCB LMN-3 !
- * * TABLEAU DE CABLAGE (PIN MAPPING) :
+ * TABLEAU DE CABLAGE (PIN MAPPING) :
  * -------------------------------------------------------------------------
  * FONCTION          | SIGNAL    | PIN TEENSY ORIGINE | ACTION PHYSIQUE  | DESTINATION / PIN MODIFIEE
  * ------------------|-----------|--------------------|------------------|---------------------------
- * Liaison UART RX   | RX1       | 0                  | PLIER (Ne pas souder) | -> Vers Maître TX (Pin 1)
- * Liaison UART TX   | TX1       | 1                  | PLIER (Ne pas souder) | -> Vers Maître RX (Pin 0)
- * Audio S/PDIF      | OUT       | 14                 | PLIER (Ne pas souder) | -> Vers Maître Pin 15
+ * Liaison UART RX   | RX1       | 0                  | PLIER (AIR)      | -> Connecteur Inter-Teensy
+ * Liaison UART TX   | TX1       | 1                  | PLIER (AIR)      | -> Connecteur Inter-Teensy
+ * Audio S/PDIF      | OUT       | 14                 | PLIER (AIR)      | -> Connecteur Inter-Teensy
  * ------------------|-----------|--------------------|------------------|---------------------------
- * Matrice (Répar.)  | COL_7     | 0 (Conflit)        | FLY-WIRE (Fil)   | -> Pin 33
- * Matrice (Répar.)  | COL_6     | 1 (Conflit)        | FLY-WIRE (Fil)   | -> Pin 37
- * Matrice (Répar.)  | COL_9     | 14 (Conflit)       | FLY-WIRE (Fil)   | -> Pin 38
+ * Matrice (Répar.)  | COL_7     | 0 (Conflit)        | FIL VOLANT       | -> Pin 33
+ * Matrice (Répar.)  | COL_6     | 1 (Conflit)        | FIL VOLANT       | -> Pin 37
+ * Matrice (Répar.)  | COL_9     | 14 (Conflit)       | FIL VOLANT       | -> Pin 38
  * ------------------|-----------|--------------------|------------------|---------------------------
  * Ecran OLED        | SDA       | 18                 | Câblage Direct   | -> Ecran SDA
  * Ecran OLED        | SCL       | 19                 | Câblage Direct   | -> Ecran SCL
- * Joystick (Natif)  | AXE X     | 15 (A1)            | PCB LMN-3 Std    | (Pitchbend Origine)
+ * Joystick (Natif)  | AXE X     | 15 (A1)            | PCB LMN-3 Std    | Pitchbend Natif
  * -------------------------------------------------------------------------
  */
 
 #include <Arduino.h>
-#include <config.h>
-#include <Control_Surface.h>
 #include <Audio.h>
+#include <Encoder.h>
+#include <SPI.h>
 #include <U8g2lib.h>
 #include <Wire.h>
-#include <SPI.h>
+
+#include "config.h"
+#include "EncoderMap.h"
+#include "KeyMap.h"
 
 // =========================================================
-// 1. CONFIGURATION MIDI & SERIE (2 Mbps)
+// 1. MODE & INTERFACES
 // =========================================================
-HardwareSerialMIDI_Interface midi = {Serial1, 2000000};
+bool diagnosticMode = false;
 
 // =========================================================
-// 2. OBJETS AUDIO & OLED
+// 2. AUDIO S/PDIF (OSCILLATEUR TEST)
 // =========================================================
+AudioSynthWaveform testOsc;
 AudioOutputSPDIF3 spdif;
+AudioConnection patchCordL(testOsc, 0, spdif, 0);
+AudioConnection patchCordR(testOsc, 0, spdif, 1);
+
+// =========================================================
+// 3. OLED
+// =========================================================
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 // =========================================================
-// 3. LOGIQUE JOYSTICK & OLED
+// 4. MATRICE
+// =========================================================
+static constexpr uint8_t ROW_COUNT = 5;
+static constexpr uint8_t COL_COUNT = 10;
+
+const uint8_t ROW_PINS[ROW_COUNT] = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
+const uint8_t COL_PINS[COL_COUNT] = {COL_0, COL_1, COL_2, COL_3, COL_4,
+                                     COL_5, COL_6, COL_7, COL_8, COL_9};
+
+bool keyState[ROW_COUNT][COL_COUNT] = {};
+uint32_t keyLastChange[ROW_COUNT][COL_COUNT] = {};
+static constexpr uint32_t KEY_DEBOUNCE_MS = 20;
+
+// =========================================================
+// 5. ENCODEURS
+// =========================================================
+Encoder enc1(ENC1_PIN_A, ENC1_PIN_B);
+Encoder enc2(ENC2_PIN_A, ENC2_PIN_B);
+Encoder enc3(ENC3_PIN_A, ENC3_PIN_B);
+Encoder enc4(ENC4_PIN_A, ENC4_PIN_B);
+
+int enc1Last = 0;
+int enc2Last = 0;
+int enc3Last = 0;
+long enc4Last = 0;
+
+// =========================================================
+// 6. ETATS UI
 // =========================================================
 unsigned long lastJoySend = 0;
 unsigned long lastOledUpdate = 0;
 int lastJoyRaw = 0;
+const char *lastActionLabel = "-";
+int lastRowPressed = -1;
+int lastColPressed = -1;
+const char *lastEncDir = "-";
+bool enc4ButtonState = false;
+bool enc4ButtonLast = false;
+uint32_t enc4ButtonLastChange = 0;
+static constexpr uint32_t ENC_BUTTON_DEBOUNCE_MS = 20;
 
 // =========================================================
-// 4. CALLBACKS (Lien Matrice -> Sortie MIDI)
+// 7. UTILITAIRES MIDI
 // =========================================================
-// Cette classe intercepte les notes jouées sur la matrice pour
-// envoyer le MIDI série uniquement.
-
-class HybridNoteCallbacks : public MIDIOutputElement {
- public:
-  HybridNoteCallbacks() {}
-
-  void sendNoteOn(MIDIAddress address, uint8_t velocity) override {
-      midi.sendNoteOn(address, velocity);
+void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
+  if (diagnosticMode) {
+    Serial.print("Row: ");
+    Serial.print(row);
+    Serial.print(" Col: ");
+    Serial.println(col);
+    return;
   }
+  Serial1.write(0x90 | ((channel - 1) & 0x0F));
+  Serial1.write(note);
+  Serial1.write(velocity);
+}
 
-  void sendNoteOff(MIDIAddress address, uint8_t velocity) override {
-      midi.sendNoteOff(address, velocity);
+void sendNoteOff(uint8_t channel, uint8_t note, uint8_t velocity) {
+  if (diagnosticMode) {
+    return;
   }
+  Serial1.write(0x80 | ((channel - 1) & 0x0F));
+  Serial1.write(note);
+  Serial1.write(velocity);
+}
 
-  void sendCC(MIDIAddress address, uint8_t value) override { midi.sendCC(address, value); }
-  void sendKP(MIDIAddress address, uint8_t value) override { midi.sendKP(address, value); }
-  void sendPC(MIDIAddress address) override { midi.sendPC(address); }
-  void sendCP(MIDIAddress address, uint8_t value) override { midi.sendCP(address, value); }
-  void sendPB(MIDIAddress address, uint16_t value) override { midi.sendPB(address, value); }
-  void sendSysEx(const uint8_t *data, uint16_t length, bool cn = false) override {
-      midi.sendSysEx(data, length, cn);
+void sendCC(uint8_t channel, uint8_t cc, uint8_t value) {
+  if (diagnosticMode) {
+    return;
   }
-  void sendRealTime(uint8_t message, bool cn = false) override {
-      midi.sendRealTime(message, cn);
-  }
-};
-
-HybridNoteCallbacks hybridSender;
-
-// =========================================================
-// 5. CONFIGURATION LMN-3 (Objets Standards)
-// =========================================================
-
-CCRotaryEncoder enc1 = {
-    {5, 6}, // pins
-    {ENCODER_1}, // MIDI address (CC number + optional channel)
-    1, // optional multiplier if the control isn't fast enough
-};
-
-CCRotaryEncoder enc2 = {
-    {26, 27}, // pins
-    {ENCODER_2}, // MIDI address (CC number + optional channel)
-    1, // optional multiplier if the control isn't fast enough
-};
-
-CCRotaryEncoder enc3 = {
-    {29, 30}, // pins
-    {ENCODER_3}, // MIDI address (CC number + optional channel)
-    1, // optional multiplier if the control isn't fast enough
-};
-
-CCRotaryEncoder enc4 = {
-    {31, 32}, // pins
-    {ENCODER_4}, // MIDI address (CC number + optional channel)
-    1, // optional multiplier if the control isn't fast enough
-};
-
-const int maxTransposition = 4;
-const int minTransposition = -1 * maxTransposition;
-const int transpositionSemitones = 12;
-Transposer<minTransposition, maxTransposition>transposer(transpositionSemitones);
-
-const AddressMatrix<2, 14> noteAddresses = {{
-                                                {1, 54, 56, 58, 1, 61, 63, 1, 66, 68, 70, 1, 73, 75},
-                                                {53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76},
-                                            }};
-
-Bankable::NoteButtonMatrix<2, 14> noteButtonMatrix = {
-    transposer,
-    {ROW_3, ROW_4}, // row pins
-    {COL_0, COL_1, COL_2, COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13}, // column pins
-    noteAddresses, // address matrix
-    CHANNEL_1, // channel and cable number
-};
-
-// Note that plus and minus buttons need special care since they also control the transposer
-// When presses are detected on plus and minus as part of the matrix scanning just send a dummy CC message
-// The plus/minus buttons are handled separately as part of updatePlusMinus()
-const AddressMatrix<3, 11> ccAddresses = {{
-                                              {LOOP_BUTTON, LOOP_IN_BUTTON, LOOP_OUT_BUTTON, DUMMY, DUMMY, DUMMY, ENCODER_1_BUTTON, ENCODER_2_BUTTON, DUMMY, ENCODER_3_BUTTON, ENCODER_4_BUTTON},
-                                              {CUT_BUTTON, PASTE_BUTTON, SLICE_BUTTON, SAVE_BUTTON, UNDO_BUTTON, DUMMY, DUMMY, DUMMY, DUMMY, DUMMY, DUMMY},
-                                              {CONTROL_BUTTON, RECORD_BUTTON, PLAY_BUTTON, STOP_BUTTON, SETTINGS_BUTTON, TEMPO_BUTTON, MIXER_BUTTON, TRACKS_BUTTON, PLUGINS_BUTTON, MODIFIERS_BUTTON, SEQUENCERS_BUTTON}
-                                         }};
-
-CCButtonMatrix<3, 11> ccButtonmatrix = {
-    {ROW_0, ROW_1, ROW_2}, // row pins
-    {COL_3, COL_4, COL_5, COL_6, COL_7, COL_8, COL_9, COL_10, COL_11, COL_12, COL_13}, // column pins
-    ccAddresses, // address matrix
-    CHANNEL_1, // channel and cable number
-};
-
-bool plusPressed = false;
-bool minusPressed = false;
-bool shiftPressed = false;
-bool shouldUpdateOctave = false;
-
-// There is probably a better way, but this is what I thought of first and it works ok ¯\_(ツ)_/¯
-// Hard to follow though :/
-void updatePlusMinus() {
-    // check if shift is down
-    // getPrevState uses (col, row)
-    if (ccButtonmatrix.getPrevState(0, 2) == 0) {
-        shiftPressed = true;
-        // Shift is down so send the octave change messages instead of the regular plus/minus ones
-        // Check if plus was released
-        if (ccButtonmatrix.getPrevState(3, 0) == 0) {
-            plusPressed = true;
-
-        } else {
-            if (plusPressed) {
-                if (transposer.getTransposition() < maxTransposition) {
-                    transposer.setTransposition(transposer.getTransposition() + 1);
-                }
-                shouldUpdateOctave = true;
-                plusPressed = false;
-            }
-        }
-
-        // Check if minus was released
-        if (ccButtonmatrix.getPrevState(4, 0) == 0) {
-            minusPressed = true;
-        } else {
-            if (minusPressed) {
-                if (transposer.getTransposition() > minTransposition) {
-                    transposer.setTransposition(transposer.getTransposition() - 1);
-                }
-                shouldUpdateOctave = true;
-                minusPressed = false;
-            }
-        }
-
-        if (shouldUpdateOctave) {
-            // Cant send negative midi values, so we need to remap to only positive values
-            map(transposer.getTransposition(), minTransposition, maxTransposition, 0, maxTransposition - minTransposition);
-            Control_Surface.sendControlChange(MIDIAddress(OCTAVE_CHANGE, CHANNEL_1), transposer.getTransposition() + maxTransposition);
-            shouldUpdateOctave = false;
-        }
-    } else {
-        // Check if plus was pressed/released
-        if (ccButtonmatrix.getPrevState(3, 0) == 0) {
-            if (!plusPressed) {
-                plusPressed = true;
-                Control_Surface.sendControlChange(MIDIAddress(PLUS_BUTTON, CHANNEL_1), 127);
-            }
-
-        } else {
-            if (plusPressed) {
-                plusPressed = false;
-                Control_Surface.sendControlChange(MIDIAddress(PLUS_BUTTON, CHANNEL_1), 0);
-            }
-        }
-
-        // Check if minus was pressed/released
-        if (ccButtonmatrix.getPrevState(4, 0) == 0) {
-            if (!minusPressed) {
-                minusPressed = true;
-                Control_Surface.sendControlChange(MIDIAddress(MINUS_BUTTON, CHANNEL_1), 127);
-            }
-        } else {
-            if (minusPressed) {
-                minusPressed = false;
-                Control_Surface.sendControlChange(MIDIAddress(MINUS_BUTTON, CHANNEL_1), 0);
-            }
-        }
-    }
+  Serial1.write(0xB0 | ((channel - 1) & 0x0F));
+  Serial1.write(cc);
+  Serial1.write(value);
 }
 
 // =========================================================
-// 6. SETUP & LOOP
+// 8. INITIALISATION MATRICE
 // =========================================================
+void setupMatrixPins() {
+  for (uint8_t row = 0; row < ROW_COUNT; ++row) {
+    pinMode(ROW_PINS[row], OUTPUT);
+    digitalWrite(ROW_PINS[row], HIGH);
+  }
 
+  for (uint8_t col = 0; col < COL_COUNT; ++col) {
+    pinMode(COL_PINS[col], INPUT_PULLUP);
+  }
+}
+
+void handleKeyChange(uint8_t row, uint8_t col, bool pressed) {
+  KeyAction action = getKeyAction(row, col);
+  if (action.type == KeyAction::None) {
+    return;
+  }
+
+  lastActionLabel = action.label ? action.label : "-";
+  lastRowPressed = row;
+  lastColPressed = col;
+
+  if (diagnosticMode) {
+    return;
+  }
+
+  if (action.type == KeyAction::Note) {
+    if (pressed) {
+      sendNoteOn(action.channel, action.number, 100);
+    } else {
+      sendNoteOff(action.channel, action.number, 0);
+    }
+  } else if (action.type == KeyAction::Command) {
+    sendCC(action.channel, action.number, pressed ? 127 : 0);
+  }
+}
+
+void scanMatrix() {
+  const uint32_t now = millis();
+
+  for (uint8_t row = 0; row < ROW_COUNT; ++row) {
+    digitalWrite(ROW_PINS[row], LOW);
+    delayMicroseconds(3);
+
+    for (uint8_t col = 0; col < COL_COUNT; ++col) {
+      const bool pressed = digitalRead(COL_PINS[col]) == LOW;
+      if (pressed != keyState[row][col] && (now - keyLastChange[row][col]) > KEY_DEBOUNCE_MS) {
+        keyState[row][col] = pressed;
+        keyLastChange[row][col] = now;
+        handleKeyChange(row, col, pressed);
+      }
+    }
+
+    digitalWrite(ROW_PINS[row], HIGH);
+  }
+}
+
+// =========================================================
+// 9. ENCODEURS
+// =========================================================
+int clampEncoderValue(long value) {
+  if (value < ENC_MIN) {
+    return ENC_MIN;
+  }
+  if (value > ENC_MAX) {
+    return ENC_MAX;
+  }
+  return static_cast<int>(value);
+}
+
+void handleAbsoluteEncoder(Encoder &enc, int &lastValue, uint8_t cc) {
+  long position = enc.read() / ENC_STEPS_PER_DETENT;
+  int value = clampEncoderValue(position);
+  if (value != lastValue) {
+    lastValue = value;
+    if (!diagnosticMode) {
+      sendCC(MIDI_CH_PERF, cc, static_cast<uint8_t>(value));
+    }
+  }
+}
+
+void handleNavigationEncoder() {
+  long position = enc4.read() / ENC_STEPS_PER_DETENT;
+  long delta = position - enc4Last;
+  if (delta == 0) {
+    return;
+  }
+
+  enc4Last = position;
+  if (delta > 0) {
+    lastEncDir = "> Droite";
+    if (!diagnosticMode) {
+      sendCC(MIDI_CH_PERF, CMD_NEXT, 127);
+      sendCC(MIDI_CH_PERF, CMD_NEXT, 0);
+    }
+  } else {
+    lastEncDir = "< Gauche";
+    if (!diagnosticMode) {
+      sendCC(MIDI_CH_PERF, CMD_PREV, 127);
+      sendCC(MIDI_CH_PERF, CMD_PREV, 0);
+    }
+  }
+}
+
+void handleEncoderButton() {
+  const uint32_t now = millis();
+  const bool pressed = digitalRead(ENC4_BUTTON_PIN) == LOW;
+  if (pressed != enc4ButtonLast && (now - enc4ButtonLastChange) > ENC_BUTTON_DEBOUNCE_MS) {
+    enc4ButtonLastChange = now;
+    enc4ButtonLast = pressed;
+    enc4ButtonState = pressed;
+    if (!diagnosticMode) {
+      sendCC(MIDI_CH_PERF, CMD_ENTER, pressed ? 127 : 0);
+    }
+  }
+}
+
+// =========================================================
+// 10. OLED UI
+// =========================================================
+void drawBootScreen() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x12_tr);
+  u8g2.drawStr(0, 14, "PROJET TOTEM");
+  u8g2.drawStr(0, 30, "INITIALISATION");
+  u8g2.drawStr(0, 46, "FIRMWARE ESCLAVE");
+  u8g2.sendBuffer();
+}
+
+void drawDiagnosticScreen() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x12_tr);
+  u8g2.drawStr(0, 12, "[ DIAGNOSTIC USB ]");
+
+  char line[32];
+  snprintf(line, sizeof(line), "JOY : %4d", lastJoyRaw);
+  u8g2.drawStr(0, 28, line);
+
+  snprintf(line, sizeof(line), "LAST: Touche(%d,%d)", lastRowPressed, lastColPressed);
+  u8g2.drawStr(0, 42, line);
+
+  snprintf(line, sizeof(line), "ENC : %s", lastEncDir);
+  u8g2.drawStr(0, 56, line);
+  u8g2.sendBuffer();
+}
+
+void drawNormalScreen() {
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x12_tr);
+  u8g2.drawStr(0, 12, "TOTEM [Esclave]");
+  u8g2.drawStr(0, 26, "S/PDIF: ON");
+  u8g2.drawHLine(0, 32, 128);
+
+  char line[32];
+  snprintf(line, sizeof(line), "Note: %s", lastActionLabel);
+  u8g2.drawStr(0, 50, line);
+  u8g2.sendBuffer();
+}
+
+// =========================================================
+// 11. SETUP & LOOP
+// =========================================================
 void setup() {
-    // A. Audio (S/PDIF)
-    AudioMemory(10);
+  pinMode(ENC4_BUTTON_PIN, INPUT_PULLUP);
+  diagnosticMode = digitalRead(ENC4_BUTTON_PIN) == LOW;
 
-    // B. Série (MIDI)
+  if (diagnosticMode) {
+    Serial.begin(DEBUG_BAUDRATE);
+    while (!Serial && millis() < 2000) {
+      delay(10);
+    }
+    Serial.println("[TOTEM] MODE DIAGNOSTIC USB");
+  } else {
     Serial1.begin(2000000);
+  }
 
-    // C. OLED
-    u8g2.begin();
-    u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_6x12_tr);
-    u8g2.drawStr(0, 14, "PROJET TOTEM");
-    u8g2.drawStr(0, 30, "MODE ESCLAVE");
-    u8g2.drawStr(0, 46, "INIT...");
-    u8g2.sendBuffer();
-    delay(2000);
+  setupMatrixPins();
 
-    // D. Démarrer Control Surface (Scanner Matrice + Série)
-    Control_Surface.begin();
+  AudioMemory(10);
+  testOsc.begin(WAVEFORM_SINE);
+  testOsc.frequency(440.0f);
+  testOsc.amplitude(0.2f);
+
+  u8g2.begin();
+  drawBootScreen();
+  delay(1200);
 }
 
 void loop() {
-    // 1. Gestion du LMN-3 (Matrice -> MIDI Série)
-    Control_Surface.loop();
+  scanMatrix();
 
-    // 2. Gestion du Joystick (toutes les 10 ms)
-    unsigned long now = millis();
-    if (now - lastJoySend >= 10) {
-        lastJoySend = now;
+  handleAbsoluteEncoder(enc1, enc1Last, CC_FILTER);
+  handleAbsoluteEncoder(enc2, enc2Last, CC_RESO);
+  handleAbsoluteEncoder(enc3, enc3Last, CC_FX);
+  handleNavigationEncoder();
+  handleEncoderButton();
 
-        lastJoyRaw = analogRead(JOY_PIN_MAIN);
-        uint8_t xMapped = static_cast<uint8_t>(map(lastJoyRaw, 0, 1023, 0, 254));
+  const uint32_t now = millis();
 
-        // Envoi protocole Totem vers Maître
-        Serial1.write(0xFF);
-        Serial1.write(xMapped);
-        Serial1.write(static_cast<uint8_t>(127));
-        Serial1.write(static_cast<uint8_t>(0));
+  if (!diagnosticMode && now - lastJoySend >= 15) {
+    lastJoySend = now;
+    lastJoyRaw = analogRead(PIN_JOY_MAIN);
+    uint8_t xMapped = static_cast<uint8_t>(map(lastJoyRaw, 0, 1023, 0, 254));
+
+    Serial1.write(0xFF);
+    Serial1.write(xMapped);
+    Serial1.write(static_cast<uint8_t>(127));
+    Serial1.write(static_cast<uint8_t>(0));
+  }
+
+  if (diagnosticMode && now - lastJoySend >= 15) {
+    lastJoySend = now;
+    lastJoyRaw = analogRead(PIN_JOY_MAIN);
+    Serial.print("Joy: ");
+    Serial.println(lastJoyRaw);
+  }
+
+  if (now - lastOledUpdate >= 50) {
+    lastOledUpdate = now;
+    if (diagnosticMode) {
+      drawDiagnosticScreen();
+    } else {
+      drawNormalScreen();
     }
-
-    // 3. Gestion OLED (toutes les 50 ms)
-    if (now - lastOledUpdate >= 50) {
-        lastOledUpdate = now;
-
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_6x12_tr);
-        u8g2.drawStr(0, 12, "TOTEM CTRL");
-        u8g2.drawStr(0, 62, "Connexion: OK");
-
-        int barWidth = map(lastJoyRaw, 0, 1023, 0, 124);
-        u8g2.drawFrame(0, 22, 128, 12);
-        u8g2.drawBox(2, 24, barWidth, 8);
-        u8g2.sendBuffer();
-    }
-
-    updatePlusMinus();
+  }
 }
