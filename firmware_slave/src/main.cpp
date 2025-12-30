@@ -30,6 +30,7 @@
 #include "config.h"
 #include "EncoderMap.h"
 #include "KeyMap.h"
+#include "TotemUI.h"
 
 // =========================================================
 // 1. MODE & INTERFACES
@@ -48,6 +49,7 @@ AudioConnection patchCordR(testOsc, 0, spdif, 1);
 // 3. OLED
 // =========================================================
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+TotemUI::Controller ui(u8g2);
 
 // =========================================================
 // 4. MATRICE
@@ -82,11 +84,17 @@ long enc4Last = 0;
 unsigned long lastJoySend = 0;
 unsigned long lastOledUpdate = 0;
 int lastJoyRaw = 0;
-const char *lastActionLabel = "-";
+int lastJoyDisplay = 0;
+uint32_t lastJoyMove = 0;
+char lastNoteName[6] = "-";
+uint32_t lastNoteTime = 0;
 int lastRowPressed = -1;
 int lastColPressed = -1;
 const char *lastEncDir = "-";
-bool enc4ButtonState = false;
+const char *lastEncLabel = nullptr;
+uint8_t lastEncValue = 0;
+uint32_t lastEncTime = 0;
+bool drumMode = true;
 bool enc4ButtonLast = false;
 uint32_t enc4ButtonLastChange = 0;
 static constexpr uint32_t ENC_BUTTON_DEBOUNCE_MS = 20;
@@ -96,10 +104,6 @@ static constexpr uint32_t ENC_BUTTON_DEBOUNCE_MS = 20;
 // =========================================================
 void sendNoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
   if (diagnosticMode) {
-    Serial.print("Row: ");
-    Serial.print(row);
-    Serial.print(" Col: ");
-    Serial.println(col);
     return;
   }
   Serial1.write(0x90 | ((channel - 1) & 0x0F));
@@ -145,7 +149,6 @@ void handleKeyChange(uint8_t row, uint8_t col, bool pressed) {
     return;
   }
 
-  lastActionLabel = action.label ? action.label : "-";
   lastRowPressed = row;
   lastColPressed = col;
 
@@ -155,12 +158,17 @@ void handleKeyChange(uint8_t row, uint8_t col, bool pressed) {
 
   if (action.type == KeyAction::Note) {
     if (pressed) {
+      TotemUI::formatNoteName(action.number, lastNoteName, sizeof(lastNoteName));
+      lastNoteTime = millis();
       sendNoteOn(action.channel, action.number, 100);
     } else {
       sendNoteOff(action.channel, action.number, 0);
     }
   } else if (action.type == KeyAction::Command) {
     sendCC(action.channel, action.number, pressed ? 127 : 0);
+    if (action.number == CMD_MODE && pressed) {
+      drumMode = !drumMode;
+    }
   }
 }
 
@@ -202,6 +210,14 @@ void handleAbsoluteEncoder(Encoder &enc, int &lastValue, uint8_t cc) {
   int value = clampEncoderValue(position);
   if (value != lastValue) {
     lastValue = value;
+    lastEncValue = static_cast<uint8_t>(value);
+    lastEncTime = millis();
+    for (const auto &encoder : PERF_ENCODERS) {
+      if (encoder.cc == cc) {
+        lastEncLabel = encoder.label;
+        break;
+      }
+    }
     if (!diagnosticMode) {
       sendCC(MIDI_CH_PERF, cc, static_cast<uint8_t>(value));
     }
@@ -218,12 +234,18 @@ void handleNavigationEncoder() {
   enc4Last = position;
   if (delta > 0) {
     lastEncDir = "> Droite";
+    lastEncLabel = "NAV";
+    lastEncValue = 127;
+    lastEncTime = millis();
     if (!diagnosticMode) {
       sendCC(MIDI_CH_PERF, CMD_NEXT, 127);
       sendCC(MIDI_CH_PERF, CMD_NEXT, 0);
     }
   } else {
     lastEncDir = "< Gauche";
+    lastEncLabel = "NAV";
+    lastEncValue = 0;
+    lastEncTime = millis();
     if (!diagnosticMode) {
       sendCC(MIDI_CH_PERF, CMD_PREV, 127);
       sendCC(MIDI_CH_PERF, CMD_PREV, 0);
@@ -237,53 +259,13 @@ void handleEncoderButton() {
   if (pressed != enc4ButtonLast && (now - enc4ButtonLastChange) > ENC_BUTTON_DEBOUNCE_MS) {
     enc4ButtonLastChange = now;
     enc4ButtonLast = pressed;
-    enc4ButtonState = pressed;
+    lastEncLabel = "ENTER";
+    lastEncValue = pressed ? 127 : 0;
+    lastEncTime = now;
     if (!diagnosticMode) {
       sendCC(MIDI_CH_PERF, CMD_ENTER, pressed ? 127 : 0);
     }
   }
-}
-
-// =========================================================
-// 10. OLED UI
-// =========================================================
-void drawBootScreen() {
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x12_tr);
-  u8g2.drawStr(0, 14, "PROJET TOTEM");
-  u8g2.drawStr(0, 30, "INITIALISATION");
-  u8g2.drawStr(0, 46, "FIRMWARE ESCLAVE");
-  u8g2.sendBuffer();
-}
-
-void drawDiagnosticScreen() {
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x12_tr);
-  u8g2.drawStr(0, 12, "[ DIAGNOSTIC USB ]");
-
-  char line[32];
-  snprintf(line, sizeof(line), "JOY : %4d", lastJoyRaw);
-  u8g2.drawStr(0, 28, line);
-
-  snprintf(line, sizeof(line), "LAST: Touche(%d,%d)", lastRowPressed, lastColPressed);
-  u8g2.drawStr(0, 42, line);
-
-  snprintf(line, sizeof(line), "ENC : %s", lastEncDir);
-  u8g2.drawStr(0, 56, line);
-  u8g2.sendBuffer();
-}
-
-void drawNormalScreen() {
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x12_tr);
-  u8g2.drawStr(0, 12, "TOTEM [Esclave]");
-  u8g2.drawStr(0, 26, "S/PDIF: ON");
-  u8g2.drawHLine(0, 32, 128);
-
-  char line[32];
-  snprintf(line, sizeof(line), "Note: %s", lastActionLabel);
-  u8g2.drawStr(0, 50, line);
-  u8g2.sendBuffer();
 }
 
 // =========================================================
@@ -300,7 +282,7 @@ void setup() {
     }
     Serial.println("[TOTEM] MODE DIAGNOSTIC USB");
   } else {
-    Serial1.begin(2000000);
+    Serial1.begin(MIDI_BAUDRATE);
   }
 
   setupMatrixPins();
@@ -310,9 +292,12 @@ void setup() {
   testOsc.frequency(440.0f);
   testOsc.amplitude(0.2f);
 
-  u8g2.begin();
-  drawBootScreen();
-  delay(1200);
+  ui.begin();
+  ui.startBoot(millis());
+  while (!ui.isBootDone()) {
+    ui.renderBoot(millis());
+    delay(40);
+  }
 }
 
 void loop() {
@@ -326,9 +311,13 @@ void loop() {
 
   const uint32_t now = millis();
 
-  if (!diagnosticMode && now - lastJoySend >= 15) {
+  if (!diagnosticMode && now - lastJoySend >= 10) {
     lastJoySend = now;
     lastJoyRaw = analogRead(PIN_JOY_MAIN);
+    if (abs(lastJoyRaw - lastJoyDisplay) > 8) {
+      lastJoyDisplay = lastJoyRaw;
+      lastJoyMove = now;
+    }
     uint8_t xMapped = static_cast<uint8_t>(map(lastJoyRaw, 0, 1023, 0, 254));
 
     Serial1.write(0xFF);
@@ -337,19 +326,35 @@ void loop() {
     Serial1.write(static_cast<uint8_t>(0));
   }
 
-  if (diagnosticMode && now - lastJoySend >= 15) {
+  if (diagnosticMode && now - lastJoySend >= 10) {
     lastJoySend = now;
     lastJoyRaw = analogRead(PIN_JOY_MAIN);
     Serial.print("Joy: ");
     Serial.println(lastJoyRaw);
   }
 
-  if (now - lastOledUpdate >= 50) {
+  if (now - lastOledUpdate >= 40) {
     lastOledUpdate = now;
     if (diagnosticMode) {
-      drawDiagnosticScreen();
+      TotemUI::Snapshot snapshot;
+      snapshot.lastJoyRaw = lastJoyRaw;
+      snapshot.lastRow = lastRowPressed;
+      snapshot.lastCol = lastColPressed;
+      snapshot.lastEncDir = lastEncDir;
+      ui.renderDiagnostic(snapshot);
     } else {
-      drawNormalScreen();
+      TotemUI::Snapshot snapshot;
+      snapshot.linkActive = true;
+      snapshot.bpm = 120;
+      snapshot.drumMode = drumMode;
+      snapshot.joyValue = lastJoyDisplay;
+      snapshot.joyActive = lastJoyMove > 0 && (now - lastJoyMove) < 700;
+      snapshot.noteLabel = lastNoteName;
+      snapshot.noteActive = lastNoteTime > 0 && (now - lastNoteTime) < 700;
+      snapshot.encoderLabel = lastEncLabel;
+      snapshot.encoderValue = lastEncValue;
+      snapshot.encoderActive = lastEncTime > 0 && (now - lastEncTime) < 700;
+      ui.renderDashboard(snapshot, now);
     }
   }
 }

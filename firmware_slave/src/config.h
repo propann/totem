@@ -5,10 +5,19 @@
 // =========================================================
 // CONFIGURATION GENERALE
 // =========================================================
-const int DEBUG_BAUDRATE = 115200;
+const int DEBUG_BAUDRATE = 2000000;
+const int MIDI_BAUDRATE = 2000000;
+
+// Audio
+const bool ENABLE_SPDIF = true;
 
 // Joystick
 const int PIN_JOY_MAIN = A1; // A1 = Pin 15 physique
+
+// Pins hack LMN-3 (S/PDIF & UART déportés)
+const int PIN_UART_RX = 0;
+const int PIN_UART_TX = 1;
+const int PIN_SPDIF_OUT = 14;
 
 // =========================================================
 // PINS MATRICE (5x10)
