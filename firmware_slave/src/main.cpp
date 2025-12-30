@@ -1,67 +1,72 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <Arduino.h>
 #include <U8g2lib.h>
-#pragma GCC diagnostic pop
+#include <Control_Surface.h>
+#include <AH/Hardware/ButtonMatrix.hpp>
 
-#include "TotemUI.h"
 #include "config.h"
-#include "slave/Slave_Matrix_Controller.h"
 
 USING_CS_NAMESPACE;
+
+// ---------------------------------------------------------------------------
+// Configuration matrice (ordre exact demandé pour le test)
+// ---------------------------------------------------------------------------
+constexpr uint8_t ROWS = 5;
+constexpr uint8_t COLS = 10;
+const uint8_t rowPins[ROWS] = {24, 23, 34, 35, 28};
+const uint8_t colPins[COLS] = {9, 8, 7, 4, 3, 2, 37, 33, 25, 38};
 
 // Ecran OLED (I2C 18/19)
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE,
                                          /* clock=*/ OLED_SCL, /* data=*/ OLED_SDA);
 
-// MIDI hardware sur Serial1 2 000 000 bauds
-HardwareSerialMIDI_Interface serialMIDI{Serial1, MIDI_BAUDRATE};
+// Sous-classe ButtonMatrix pour capter les événements
+class DebugMatrix : public AH::ButtonMatrix<ROWS, COLS> {
+  public:
+    DebugMatrix(const uint8_t (&rows)[ROWS], const uint8_t (&cols)[COLS])
+        : AH::ButtonMatrix<ROWS, COLS>(rows, cols) {}
 
-TotemMatrix matrix;
-TotemUI::TotemUI ui(u8g2);
+  private:
+    void onButtonChanged(uint8_t row, uint8_t col, bool state) override {
+        if (state == LOW) { // appui détecté
+            const uint8_t physPin = colPins[col];
+            Serial.print(F("--- TOUCHE DETECTEE --- | Ligne: "));
+            Serial.print(row);
+            Serial.print(F(" | Colonne: "));
+            Serial.print(col);
+            Serial.print(F(" | Pin Physique: "));
+            Serial.println(physPin);
 
-unsigned long lastFrame = 0;
-String lastNote = "-";
+            if (physPin == 33 || physPin == 37 || physPin == 38) {
+                Serial.println(F("[OK] SIGNAL RECU SUR PIN DE REPARATION"));
+            }
 
-struct LastNoteCallbacks : public MIDI_Callbacks {
-    void onChannelMessage(Parsing_MIDI_Interface &midi) override {
-        auto msg = midi.getChannelMessage();
-        const MIDIMessageType type =
-            static_cast<MIDIMessageType>(msg.header & 0xF0);
-        if (type == MIDIMessageType::NOTE_ON && msg.data2 > 0) {
-            lastNote = matrix.getNoteName(msg.data1);
+            // Mise à jour de l'écran
+            u8g2.clearBuffer();
+            u8g2.setFont(u8g2_font_6x12_tr);
+            u8g2.drawStr(0, 12, "CONSOLE DEBUG READY");
+            char line[24];
+            snprintf(line, sizeof(line), "Key: [%u][%u]", row, col);
+            u8g2.drawStr(0, 28, line);
+            u8g2.sendBuffer();
         }
     }
 };
 
-LastNoteCallbacks noteCallbacks;
+DebugMatrix matrix(rowPins, colPins);
 
 void setup() {
-    Serial.begin(DEBUG_BAUDRATE);
-    serialMIDI.begin();
-    serialMIDI.setAsDefault();
-    serialMIDI.setCallbacks(&noteCallbacks);
+    Serial.begin(115200);
+    u8g2.begin();
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 12, "CONSOLE DEBUG READY");
+    u8g2.sendBuffer();
 
     matrix.begin();
-
-    pinMode(PIN_JOY_MAIN, INPUT);
-
-    ui.begin();
-    ui.drawBootScreen("V1-Alpha");
-    delay(600); // petite pause d’amorçage
 }
 
 void loop() {
-    Control_Surface.loop();
-
-    // Joystick lu en continu, note courante affichée
-    const int joyVal = analogRead(PIN_JOY_MAIN);
-
-    // Note affichée = dernière note on envoyée (si besoin on peut lier à callbacks)
-    // Le rafraîchissement écran est plafonné à 30 FPS
-    const unsigned long now = millis();
-    if (now - lastFrame >= 33) {
-        ui.update(joyVal, lastNote);
-        lastFrame = now;
-    }
+    // Le ButtonMatrix d'AH (Control_Surface) gère le scan + debounce en interne
+    matrix.update();
+    // Pas besoin d'appeler Control_Surface.loop() ici, on ne génère pas de MIDI
 }
