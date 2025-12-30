@@ -1,5 +1,8 @@
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <Arduino.h>
 #include <U8g2lib.h>
+#pragma GCC diagnostic pop
 
 #include "TotemUI.h"
 #include "config.h"

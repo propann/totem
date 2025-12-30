@@ -11,17 +11,17 @@
 
 // Définition CORRIGÉE pour le Mod Totem (Fly-wires)
 // Ne JAMAIS remettre 0, 1 ou 14 ici !
-const CS::PinList<TotemMatrix::kCols> TotemMatrix::colPins = {
+const PinList<TotemMatrix::kCols> TotemMatrix::colPins = {
     COL_0, COL_1, COL_2, COL_3, COL_4, COL_5,
     COL_6, // Pin 37 (ex-TX1 isolée)
     COL_7, // Pin 33 (ex-RX1 isolée)
     COL_8,
     COL_9, // Pin 38 (ex-SPDIF isolée)
 };
-const CS::PinList<TotemMatrix::kRows> TotemMatrix::rowPins = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
+const PinList<TotemMatrix::kRows> TotemMatrix::rowPins = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
 
 // Mapping notes : drums (4x4) en canal 10, reste en canal 1.
-const CS::AddressMatrix<TotemMatrix::kRows, TotemMatrix::kCols>
+const AddressMatrix<TotemMatrix::kRows, TotemMatrix::kCols>
     TotemMatrix::addressMatrix = {{
         {36, 37, 38, 39, 112, 113, 114, 115, 116, 117}, // Row 0
         {40, 41, 42, 43, 118, 119, 120, 121, 122, 123}, // Row 1
@@ -30,18 +30,18 @@ const CS::AddressMatrix<TotemMatrix::kRows, TotemMatrix::kCols>
         {58, 59, 60, 61, 62, 63, 64, 65, 66, 67},       // Row 4
     }};
 
-const CS::AddressMatrix<4, 4> kDrumNotes = {{
+const AddressMatrix<4, 4> kDrumNotes = {{
     {36, 37, 38, 39},
     {40, 41, 42, 43},
     {44, 45, 46, 47},
     {48, 49, 50, 51},
 }};
 
-const CS::AddressMatrix<1, 10> kMelodyBottom = {{
+const AddressMatrix<1, 10> kMelodyBottom = {{
     {48, 49, 50, 51, 52, 53, 54, 55, 56, 57},
 }};
 
-const CS::AddressMatrix<1, 10> kMelodyTop = {{
+const AddressMatrix<1, 10> kMelodyTop = {{
     {58, 59, 60, 61, 62, 63, 64, 65, 66, 67},
 }};
 

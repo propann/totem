@@ -7,7 +7,10 @@
 // - Col 9 -> Pin 38
 // Ne JAMAIS utiliser les pins 0, 1 ou 14 pour la matrice.
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-copy"
 #include <Control_Surface.h>
+#pragma GCC diagnostic pop
 USING_CS_NAMESPACE;
 
 class TotemMatrix {
@@ -21,14 +24,14 @@ class TotemMatrix {
 
     const char *getNoteName(uint8_t note);
 
-    const CS::AddressMatrix<kRows, kCols> &addresses() const { return addressMatrix; }
+    const AddressMatrix<kRows, kCols> &addresses() const { return addressMatrix; }
 
   private:
-    static const CS::PinList<kRows> rowPins;
-    static const CS::PinList<kCols> colPins;
-    static const CS::AddressMatrix<kRows, kCols> addressMatrix;
+    static const PinList<kRows> rowPins;
+    static const PinList<kCols> colPins;
+    static const AddressMatrix<kRows, kCols> addressMatrix;
 
-    CS::NoteButtonMatrix<4, 4> drums;
-    CS::NoteButtonMatrix<1, 10> melodyBottom;
-    CS::NoteButtonMatrix<1, 10> melodyTop;
+    NoteButtonMatrix<4, 4> drums;
+    NoteButtonMatrix<1, 10> melodyBottom;
+    NoteButtonMatrix<1, 10> melodyTop;
 };
