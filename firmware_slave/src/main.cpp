@@ -28,6 +28,16 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftEye(U8G2_R2, U8X8_PIN_NONE);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightEye(U8G2_R2, U8X8_PIN_NONE);
 
 // ------------------- Helpers -------------------
+void drawLeftEye(int joyVal, int volVal) {
+    leftEye.clearBuffer();
+    leftEye.drawCircle(64, 32, 30);
+    const int pupilX = map(joyVal, 0, 1023, 64 - 15, 64 + 15);
+    leftEye.drawDisc(pupilX, 32, 10);
+    leftEye.drawFrame(4, 54, 120, 8);
+    leftEye.drawBox(4, 54, map(volVal, 0, 1023, 0, 120), 8);
+    leftEye.sendBuffer();
+}
+
 void showKeyEvent(bool pressed, int code, int row, int col, int pin) {
     rightEye.clearBuffer();
     rightEye.setFont(u8g2_font_6x12_tr);
@@ -48,10 +58,7 @@ void drawBoot() {
     Serial.print("Init Ecran Gauche (0x3C)... ");
     leftEye.setI2CAddress(0x3C * 2);
     leftEye.begin();
-    leftEye.clearBuffer();
-    leftEye.drawCircle(64, 32, 30);
-    leftEye.drawDisc(64, 32, 10);
-    leftEye.sendBuffer();
+    drawLeftEye(512, 0); // centre par défaut
     Serial.println("OK !");
 
     delay(300);
@@ -90,6 +97,20 @@ void setup() {
 }
 
 void loop() {
+    // Lecture analogiques
+    static int joyPrev = -1;
+    static int volPrev = -1;
+    int joy = analogRead(JOYSTICK_X_PIN);
+    int vol = analogRead(VOLUME_POT_PIN);
+
+    if (joyPrev < 0 || abs(joy - joyPrev) > 8) {
+        joyPrev = joy;
+    }
+    if (volPrev < 0 || abs(vol - volPrev) > 8) {
+        volPrev = vol;
+    }
+    drawLeftEye(joyPrev, volPrev);
+
     // Scan matrice manuel
     for (uint8_t r = 0; r < ROW_COUNT; ++r) {
         for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) {
@@ -108,22 +129,6 @@ void loop() {
     }
     for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) {
         digitalWrite(rowPins[rr], HIGH);
-    }
-
-    // Lecture analogiques (log en série si besoin)
-    static int joyPrev = -1;
-    static int volPrev = -1;
-    int joy = analogRead(JOYSTICK_X_PIN);
-    int vol = analogRead(VOLUME_POT_PIN);
-    if (joyPrev < 0 || abs(joy - joyPrev) > 8) {
-        joyPrev = joy;
-        Serial.print(F("JOY X="));
-        Serial.println(joy);
-    }
-    if (volPrev < 0 || abs(vol - volPrev) > 8) {
-        volPrev = vol;
-        Serial.print(F("VOL ="));
-        Serial.println(vol);
     }
 
     delay(20);
