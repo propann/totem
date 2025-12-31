@@ -56,7 +56,8 @@ void drawLeftBars(int joyVal) {
     leftEye.setFont(u8g2_font_9x15B_tr);
     leftEye.drawStr(0, 15, "JOYSTICK X");
     leftEye.drawFrame(0, 30, 128, 20);
-    int width = map(joyVal, 0, 1023, 0, 128);
+    // Inversion du slider pour que gauche/droite corresponde au sens physique
+    int width = map(joyVal, 0, 1023, 128, 0);
     leftEye.drawBox(0, 30, width, 20);
     leftEye.sendBuffer();
 }
