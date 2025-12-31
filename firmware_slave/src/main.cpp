@@ -1,158 +1,137 @@
 #include <Arduino.h>
 #include <U8g2lib.h>
 #include <Wire.h>
+#include <Keypad.h>
 
-// ------------------- Matrice Easy-Wire -------------------
-constexpr uint8_t ROWS[5] = {24, 23, 34, 35, 28};
-constexpr uint8_t COLS[14] = {9,  8,  7,  4,  3,  2,  16,
-                              33, 25, 17, 13, 41, 40, 36};
-const uint8_t NOTE_MAP[5][14] = {
-    {36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49},
-    {50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63},
-    {64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77},
-    {78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91},
-    {92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105},
+#include "slave/config.h"
+
+// ==========================================
+// CONFIGURATION MATRICE (D'après config.h)
+// ==========================================
+const byte ROWS = 5;
+const byte COLS = 14;
+
+byte rowPins[ROWS] = {ROW_0, ROW_1, ROW_2, ROW_3, ROW_4};
+byte colPins[COLS] = {COL_0,  COL_1,  COL_2,  COL_3,  COL_4,  COL_5, COL_6,
+                      COL_7,  COL_8,  COL_9,  COL_10, COL_11, COL_12, COL_13};
+
+// Mapping MIDI (exemple : complète selon ton besoin physique)
+int midiMap[ROWS][COLS] = {
+    {UNDO_BUTTON, TEMPO_BUTTON, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 };
-bool prevState[5][14] = {};
 
-// ------------------- Potentiomètres (ajuste les pins si besoin) -------------
-const uint8_t POT_PINS[] = {A0, A1, A2, A3};
-constexpr size_t POT_COUNT = sizeof(POT_PINS) / sizeof(POT_PINS[0]);
-int potPrev[POT_COUNT];
+Keypad kpd = Keypad(makeKeymap(midiMap), rowPins, colPins, ROWS, COLS);
 
-// Définition des deux écrans (Mode Hardware I2C, Pas de Reset)
-// Note : On utilise le même constructeur pour les deux, rotation R2 (180°)
+// ------------------- Écrans OLED -------------------
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftEye(U8G2_R2, U8X8_PIN_NONE);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightEye(U8G2_R2, U8X8_PIN_NONE);
 
 // ------------------- Helpers -------------------
-void noteNameFromNumber(uint8_t note, char *buf, size_t len) {
-  static const char *names[12] = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"};
-  const uint8_t idx = note % 12;
-  const int octave = static_cast<int>(note / 12) - 1;
-  snprintf(buf, len, "%s%d", names[idx], octave);
+void showKeyEvent(bool pressed, int code) {
+    rightEye.clearBuffer();
+    rightEye.setFont(u8g2_font_6x12_tr);
+    rightEye.drawStr(0, 14, pressed ? "KEY DOWN" : "KEY UP");
+    char buf[24];
+    snprintf(buf, sizeof(buf), "CODE: %d", code);
+    rightEye.drawStr(0, 30, buf);
+    rightEye.sendBuffer();
 }
 
-void setup() {
-  // 1. Démarrage Série pour le debug
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("--- TEST DUAL SCREEN ---");
+void drawBoot() {
+    Serial.println("--- TEST DUAL SCREEN ---");
 
-  // 0. IO Matrice
-  for (uint8_t c = 0; c < 14; ++c) {
-    pinMode(COLS[c], INPUT_PULLUP);
-  }
-  for (uint8_t r = 0; r < 5; ++r) {
-    pinMode(ROWS[r], OUTPUT);
-    digitalWrite(ROWS[r], HIGH);
-  }
-
-  // 2. Initialisation Écran GAUCHE (0x3C)
-  Serial.print("Init Ecran Gauche (0x3C)... ");
-  leftEye.setI2CAddress(0x3C * 2); // U8g2 veut l'adresse * 2 (soit 0x78)
-  leftEye.begin();
-  leftEye.clearBuffer();
-  leftEye.setFont(u8g2_font_ncenB14_tr);
-  leftEye.drawStr(10, 40, "AZOTH");
-  leftEye.sendBuffer();
-  Serial.println("OK !");
-
-  delay(500); // Petite pause de sécurité
-
-  // 3. Initialisation Écran DROIT (0x3D)
-  Serial.print("Init Ecran Droit (0x3D)... ");
-  rightEye.setI2CAddress(0x3D * 2); // U8g2 veut l'adresse * 2 (soit 0x7A)
-  rightEye.begin();
-  rightEye.clearBuffer();
-  rightEye.setFont(u8g2_font_ncenB14_tr);
-  rightEye.drawStr(10, 40, "CREATION");
-  rightEye.sendBuffer();
-  Serial.println("OK !");
-
-  // 4. Petit effet de démarrage : barre de progression synchronisée
-  for (int w = 0; w <= 120; w += 6) {
+    Serial.print("Init Ecran Gauche (0x3C)... ");
+    leftEye.setI2CAddress(0x3C * 2);
+    leftEye.begin();
     leftEye.clearBuffer();
     leftEye.setFont(u8g2_font_ncenB14_tr);
     leftEye.drawStr(10, 40, "AZOTH");
-    leftEye.drawFrame(4, 52, 120, 8);
-    leftEye.drawBox(4, 52, w, 8);
+    leftEye.sendBuffer();
+    Serial.println("OK !");
+
+    delay(500);
+
+    Serial.print("Init Ecran Droit (0x3D)... ");
+    rightEye.setI2CAddress(0x3D * 2);
+    rightEye.begin();
+    rightEye.clearBuffer();
+    rightEye.setFont(u8g2_font_ncenB14_tr);
+    rightEye.drawStr(10, 40, "CREATION");
+    rightEye.sendBuffer();
+    Serial.println("OK !");
+
+    for (int w = 0; w <= 120; w += 6) {
+        leftEye.clearBuffer();
+        leftEye.setFont(u8g2_font_ncenB14_tr);
+        leftEye.drawStr(10, 40, "AZOTH");
+        leftEye.drawFrame(4, 52, 120, 8);
+        leftEye.drawBox(4, 52, w, 8);
+        leftEye.sendBuffer();
+
+        rightEye.clearBuffer();
+        rightEye.setFont(u8g2_font_ncenB14_tr);
+        rightEye.drawStr(0, 40, "CREATION");
+        rightEye.drawFrame(4, 52, 120, 8);
+        rightEye.drawBox(4, 52, w, 8);
+        rightEye.sendBuffer();
+
+        delay(30);
+    }
+
+    leftEye.clearBuffer();
+    leftEye.drawCircle(64 - 3, 32, 30);
+    leftEye.drawDisc(64 - 3, 32, 10);
     leftEye.sendBuffer();
 
     rightEye.clearBuffer();
-    rightEye.setFont(u8g2_font_ncenB14_tr);
-    rightEye.drawStr(0, 40, "CREATION");
-    rightEye.drawFrame(4, 52, 120, 8);
-    rightEye.drawBox(4, 52, w, 8);
+    rightEye.drawCircle(64 + 3, 32, 30);
+    rightEye.drawDisc(64 + 3, 32, 10);
     rightEye.sendBuffer();
+}
 
-    delay(30);
-  }
+void setupControls() {
+    pinMode(JOYSTICK_X_PIN, INPUT);
+    pinMode(VOLUME_POT_PIN, INPUT);
+}
 
-  // 5. Mode veille : yeux statiques centrés
-  leftEye.clearBuffer();
-  leftEye.drawCircle(64 - 3, 32, 30);
-  leftEye.drawDisc(64 - 3, 32, 10);
-  leftEye.sendBuffer();
-
-  rightEye.clearBuffer();
-  rightEye.drawCircle(64 + 3, 32, 30);
-  rightEye.drawDisc(64 + 3, 32, 10);
-  rightEye.sendBuffer();
-
-  // Potentiomètres : initialisation des valeurs
-  for (size_t i = 0; i < POT_COUNT; ++i) {
-    potPrev[i] = analogRead(POT_PINS[i]);
-  }
+void setup() {
+    Serial.begin(115200);
+    delay(1000);
+    setupControls();
+    drawBoot();
 }
 
 void loop() {
-  // Scan matrice et log sur le terminal
-  char noteName[8] = "";
-  for (uint8_t r = 0; r < 5; ++r) {
-    for (uint8_t rr = 0; rr < 5; ++rr) {
-      digitalWrite(ROWS[rr], rr == r ? LOW : HIGH);
-    }
-    delayMicroseconds(40);
-
-    for (uint8_t c = 0; c < 14; ++c) {
-      const bool pressed = digitalRead(COLS[c]) == LOW;
-      const uint8_t note = NOTE_MAP[r][c];
-      if (pressed != prevState[r][c]) {
-        noteNameFromNumber(note, noteName, sizeof(noteName));
-        if (pressed) {
-          Serial.print(F("KEY DOWN  row="));
-        } else {
-          Serial.print(F("KEY UP    row="));
+    if (kpd.getKeys()) {
+        for (int i = 0; i < LIST_MAX; i++) {
+            if (kpd.key[i].kstate == PRESSED || kpd.key[i].kstate == RELEASED) {
+                Serial.print(kpd.key[i].kstate == PRESSED ? F("KEY DOWN ") : F("KEY UP   "));
+                Serial.print(F("code="));
+                Serial.println(kpd.key[i].kchar);
+                showKeyEvent(kpd.key[i].kstate == PRESSED, kpd.key[i].kchar);
+            }
         }
-        Serial.print(r);
-        Serial.print(F(" col="));
-        Serial.print(c);
-        Serial.print(F(" pin="));
-        Serial.print(COLS[c]);
-        Serial.print(F(" note="));
-        Serial.println(noteName);
-      }
-      prevState[r][c] = pressed;
     }
-  }
-  for (uint8_t rr = 0; rr < 5; ++rr) {
-    digitalWrite(ROWS[rr], HIGH);
-  }
 
-  // Lecture des potentiomètres (avec seuil pour éviter le bruit)
-  for (size_t i = 0; i < POT_COUNT; ++i) {
-    int val = analogRead(POT_PINS[i]);
-    if (abs(val - potPrev[i]) > 8) { // seuil anti-jitter
-      potPrev[i] = val;
-      Serial.print(F("POT "));
-      Serial.print(i);
-      Serial.print(F(" pin="));
-      Serial.print(POT_PINS[i]);
-      Serial.print(F(" value="));
-      Serial.println(val);
+    // Lecture analogiques (sécurisées)
+    int joy = analogRead(JOYSTICK_X_PIN);
+    int vol = analogRead(VOLUME_POT_PIN);
+    static int joyPrev = -1;
+    static int volPrev = -1;
+    if (joyPrev < 0 || abs(joy - joyPrev) > 8) {
+        joyPrev = joy;
+        Serial.print(F("JOY X="));
+        Serial.println(joy);
     }
-  }
+    if (volPrev < 0 || abs(vol - volPrev) > 8) {
+        volPrev = vol;
+        Serial.print(F("VOL =" ));
+        Serial.println(vol);
+    }
 
-  delay(20);
+    delay(20);
 }

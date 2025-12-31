@@ -5,6 +5,8 @@
 
 // --- PÉRIPHÉRIQUES GLOBAUX ---
 const int HORIZONTAL_PB_PIN = A15; // Joystick (Pin 15)
+const int JOYSTICK_X_PIN = A15;    // alias pour cohérence du code
+const int VOLUME_POT_PIN = A0;     // Potentiomètre volume (A0)
 
 // Encodeurs (Pins Standard LMN-3 - Ne pas toucher)
 const int ENCODER_1 = 3;
