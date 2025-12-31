@@ -63,9 +63,9 @@ const int COL_5 = 2;
 
 // --- LES 3 PINS DE DÉRIVATION ---
 const int COL_6 = 16;  // REMPLACE PIN 1 (TX1)
-const int COL_7 = 33;  // REMPLACE PIN 0 (RX1)
+const int COL_7 = 17;  // REMPLACE PIN 0 (RX1) - correction
 const int COL_8 = 25;
-const int COL_9 = 17;  // REMPLACE PIN 14 (A0)
+const int COL_9 = 33;  // REMPLACE PIN 14 (A0) - correction
 // -------------------------------
 
 const int COL_10 = 13;
