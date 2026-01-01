@@ -83,6 +83,12 @@ const char *buttonName(int code) {
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftEye(U8G2_R2, U8X8_PIN_NONE);
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C rightEye(U8G2_R2, U8X8_PIN_NONE);
 
+// --- DEBUT INTEGRATION TEENSY MAITRE ---
+HardwareSerial &masterSerial = Serial1;      // Lien physique vers le Maître
+bool isMasterConnected = false;              // État de la liaison
+const unsigned long MASTER_HANDSHAKE_TIMEOUT_MS = 200;
+// --- FIN INTEGRATION ---
+
 // ============================================================
 // 2. SYSTÈME DE MENU (LOGIQUE)
 // ============================================================
@@ -237,6 +243,22 @@ void runHardwareTest() {
 
 void setup() {
     Serial.begin(115200);
+    // --- DEBUT INTEGRATION TEENSY MAITRE ---
+    masterSerial.begin(2000000); // Lien rapide vers le Maître
+    unsigned long t0 = millis();
+    masterSerial.println("READY");
+    while ((millis() - t0) < MASTER_HANDSHAKE_TIMEOUT_MS && !masterSerial.available()) {
+        delay(1);
+    }
+    if (masterSerial.available()) {
+        String resp = masterSerial.readStringUntil('\n');
+        resp.trim();
+        if (resp == "ACK") {
+            isMasterConnected = true;
+        }
+    }
+    Serial.println(isMasterConnected ? "[MASTER] ACK recu" : "[MASTER] Pas de Maitre (mode autonome)");
+    // --- FIN INTEGRATION ---
     pinMode(JOYSTICK_X_PIN, INPUT);
 
     // Matrice Init
