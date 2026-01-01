@@ -107,6 +107,7 @@ void runHardwareTest() {
     if (n3 != pos3) { pos3 = n3; rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr); rightEye.setCursor(0,40); rightEye.print("ENC 3: "); rightEye.print(n3); rightEye.sendBuffer(); }
     if (n4 != pos4) { pos4 = n4; rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr); rightEye.setCursor(0,40); rightEye.print("ENC 4: "); rightEye.print(n4); rightEye.sendBuffer(); }
 
+    bool exitToMenu = false;
     for (uint8_t r = 0; r < ROW_COUNT; ++r) {
         for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) digitalWrite(rowPins[rr], rr == r ? LOW : HIGH);
         delayMicroseconds(40);
@@ -119,11 +120,18 @@ void runHardwareTest() {
                 rightEye.setCursor(0, 30); rightEye.print("PIN: "); rightEye.print(colPins[c]);
                 rightEye.setCursor(0, 45); rightEye.print("CC: "); rightEye.print(midiMap[r][c]);
                 rightEye.sendBuffer();
+                if (colPins[c] == 40 && pressed) {
+                    exitToMenu = true; // Bouton enc2 pressé -> retour menu
+                }
             }
             prevState[r][c] = pressed;
         }
     }
     for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) digitalWrite(rowPins[rr], HIGH);
+    if (exitToMenu) {
+        currentState = STATE_MENU;
+        drawMenu();
+    }
 }
 
 // ============================================================
