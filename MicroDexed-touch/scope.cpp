@@ -1,6 +1,5 @@
 #include "scope.h"
 #include "ILI9341_t3n.h"
-#include "config.h"
 extern ILI9341_t3n display;
 
 void Realtime_Scope::update(void)
