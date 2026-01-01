@@ -37,13 +37,47 @@ const int colPins[COL_COUNT] = {COL_0,  COL_1,  COL_2,  COL_3,  COL_4,  COL_5,  
 
 // Mapping MIDI (Visuel)
 const int midiMap[ROW_COUNT][COL_COUNT] = {
-    {UNDO_BUTTON, TEMPO_BUTTON, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    {UNDO_BUTTON, TEMPO_BUTTON, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, ENCODER_3_BUTTON, ENCODER_4_BUTTON},
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
     {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 };
 bool prevState[ROW_COUNT][COL_COUNT] = {};
+// Gestion de la touche unique (Row0/Col13) : clic court = entrer, appui long = sortir
+constexpr uint8_t KEY_ROW_MENU = 0;
+constexpr uint8_t KEY_COL_MENU = 13;
+bool keyMenuPressed = false;
+unsigned long keyMenuPressStart = 0;
+
+// Helper pour afficher un nom lisible d'un code CC/bouton
+const char *buttonName(int code) {
+    switch (code) {
+        case UNDO_BUTTON: return "UNDO";
+        case TEMPO_BUTTON: return "TEMPO";
+        case SAVE_BUTTON: return "SAVE";
+        case SETTINGS_BUTTON: return "SETTINGS";
+        case TRACKS_BUTTON: return "TRACKS";
+        case MIXER_BUTTON: return "MIXER";
+        case PLUGINS_BUTTON: return "PLUGINS";
+        case MODIFIERS_BUTTON: return "MODIFIERS";
+        case SEQUENCERS_BUTTON: return "SEQ";
+        case LOOP_IN_BUTTON: return "LOOP IN";
+        case LOOP_OUT_BUTTON: return "LOOP OUT";
+        case LOOP_BUTTON: return "LOOP";
+        case CUT_BUTTON: return "CUT";
+        case PASTE_BUTTON: return "PASTE";
+        case SLICE_BUTTON: return "SLICE";
+        case RECORD_BUTTON: return "REC";
+        case PLAY_BUTTON: return "PLAY";
+        case STOP_BUTTON: return "STOP";
+        case CONTROL_BUTTON: return "CTRL";
+        case OCTAVE_CHANGE: return "OCT";
+        case PLUS_BUTTON: return "+";
+        case MINUS_BUTTON: return "-";
+        default: return "EMPTY";
+    }
+}
 
 // --- ECRANS ---
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C leftEye(U8G2_R2, U8X8_PIN_NONE);
@@ -151,6 +185,7 @@ void runHardwareTest() {
     }
 
     // C. MATRICE (Scan)
+    bool exitToMenu = false;
     for (uint8_t r = 0; r < ROW_COUNT; ++r) {
         for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) digitalWrite(rowPins[rr], rr == r ? LOW : HIGH);
         delayMicroseconds(40);
@@ -159,15 +194,40 @@ void runHardwareTest() {
             if (pressed != prevState[r][c]) {
                 rightEye.clearBuffer();
                 rightEye.setFont(u8g2_font_6x12_tr);
-                rightEye.drawStr(0, 15, pressed ? "KEY DOWN" : "KEY UP");
-                rightEye.setCursor(0, 30); rightEye.print("PIN: "); rightEye.print(colPins[c]);
-                rightEye.setCursor(0, 45); rightEye.print("CC: "); rightEye.print(midiMap[r][c]);
+                rightEye.drawStr(0, 12, pressed ? "KEY DOWN" : "KEY UP");
+                rightEye.setCursor(0, 26); rightEye.print("ROW: "); rightEye.print(r);
+                rightEye.setCursor(0, 38); rightEye.print("COL: "); rightEye.print(c);
+                rightEye.setCursor(0, 50); rightEye.print("PIN: "); rightEye.print(colPins[c]);
+                rightEye.setCursor(0, 62); rightEye.print("CC: "); rightEye.print(midiMap[r][c]); rightEye.print(" "); rightEye.print(buttonName(midiMap[r][c]));
                 rightEye.sendBuffer();
+                Serial.print("[KEY] "); Serial.print(pressed ? "DOWN" : "UP");
+                Serial.print(" R"); Serial.print(r); Serial.print(" C"); Serial.print(c);
+                Serial.print(" PIN "); Serial.print(colPins[c]);
+                Serial.print(" CC "); Serial.print(midiMap[r][c]);
+                Serial.print(" ("); Serial.print(buttonName(midiMap[r][c])); Serial.println(")");
+            }
+            // Appui long sur la touche dédiée (Row0/Col13) pour sortir du test
+            if (r == KEY_ROW_MENU && c == KEY_COL_MENU) {
+                if (pressed && !keyMenuPressed) {
+                    keyMenuPressed = true;
+                    keyMenuPressStart = millis();
+                }
+                if (pressed && keyMenuPressed && (millis() - keyMenuPressStart) >= 800) {
+                    exitToMenu = true;
+                }
+                if (!pressed && keyMenuPressed) {
+                    keyMenuPressed = false;
+                }
             }
             prevState[r][c] = pressed;
         }
     }
     for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) digitalWrite(rowPins[rr], HIGH);
+    if (exitToMenu) {
+        currentState = STATE_MENU;
+        drawMenu();
+        return;
+    }
 }
 
 
@@ -211,21 +271,31 @@ void loop() {
             drawMenu();
         }
 
-        // 2. Detection Validation (N'importe quelle touche Matrice)
-        bool anyKeyPressed = false;
+        // 2. Validation via la touche dédiée (Row0/Col13) : clic court pour entrer
+        bool validate = false;
         for (uint8_t r = 0; r < ROW_COUNT; ++r) {
             digitalWrite(rowPins[r], LOW);
             delayMicroseconds(20);
             for (uint8_t c = 0; c < COL_COUNT; ++c) {
-                if (digitalRead(colPins[c]) == LOW) {
-                    anyKeyPressed = true;
-                    while(digitalRead(colPins[c]) == LOW); // Attente relâchement
+                const bool pressed = (digitalRead(colPins[c]) == LOW);
+                if (r == KEY_ROW_MENU && c == KEY_COL_MENU) {
+                    if (pressed && !keyMenuPressed) {
+                        keyMenuPressed = true;
+                        keyMenuPressStart = millis();
+                    }
+                    if (!pressed && keyMenuPressed) {
+                        unsigned long dur = millis() - keyMenuPressStart;
+                        if (dur < 800) {
+                            validate = true;
+                        }
+                        keyMenuPressed = false;
+                    }
                 }
             }
             digitalWrite(rowPins[r], HIGH);
         }
 
-        if (anyKeyPressed) {
+        if (validate) {
             if (menuSelection == 0) {
                 // START DAW
                 rightEye.clearBuffer(); rightEye.drawStr(10,30,"DAW LOADING..."); rightEye.sendBuffer();
