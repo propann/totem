@@ -2,6 +2,7 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <Encoder.h>
+#include <stdint.h>
 
 #include "slave/config.h"
 
@@ -105,6 +106,39 @@ bool isMasterConnected = false;              // État de la liaison
 const unsigned long MASTER_HANDSHAKE_TIMEOUT_MS = 200;
 // --- FIN INTEGRATION ---
 
+// --- MIDI OUT (USB + Serial1) ---
+constexpr uint8_t MIDI_CH_NOTES = 1;   // Canal pour les notes
+constexpr uint8_t MIDI_CH_CC    = 2;   // Canal pour transport/CC
+constexpr uint8_t MIDI_CH_ENC   = 1;   // Canal pour encodeurs
+constexpr uint8_t MIDI_VEL_DEFAULT = 100;
+
+int lastJoy = -1;
+int lastMod = -1;
+
+inline void sendNote(bool pressed, uint8_t note) {
+    uint8_t status = (pressed ? 0x90 : 0x80) | (MIDI_CH_NOTES - 1);
+    masterSerial.write(status); masterSerial.write(note); masterSerial.write(pressed ? MIDI_VEL_DEFAULT : 0);
+    usbMIDI.sendNoteOn(note, pressed ? MIDI_VEL_DEFAULT : 0, MIDI_CH_NOTES);
+}
+
+inline void sendCC(uint8_t cc, uint8_t val, uint8_t ch) {
+    masterSerial.write(0xB0 | (ch - 1)); masterSerial.write(cc); masterSerial.write(val);
+    usbMIDI.sendControlChange(cc, val, ch);
+}
+
+inline void sendCCRelative(uint8_t cc, int delta, uint8_t ch) {
+    if (delta == 0) return;
+    uint8_t val = delta > 0 ? 0x01 : 0x41; // two's complement relative
+    sendCC(cc, val, ch);
+}
+
+inline void sendPitchBend(uint16_t bend, uint8_t ch) {
+    masterSerial.write(0xE0 | (ch - 1));
+    masterSerial.write(bend & 0x7F);
+    masterSerial.write((bend >> 7) & 0x7F);
+    usbMIDI.sendPitchBend(bend - 8192, ch);
+}
+
 // ============================================================
 // 2. SYSTÈME DE MENU (LOGIQUE)
 // ============================================================
@@ -187,24 +221,32 @@ void runHardwareTest() {
     long n4 = enc4.read();
 
     if (n1 != pos1) { 
+        int delta = n1 - pos1;
         pos1 = n1; 
         rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr);
         rightEye.setCursor(0,40); rightEye.print("ENC 1: "); rightEye.print(n1); rightEye.sendBuffer();
+        sendCCRelative(74, delta, MIDI_CH_ENC);
     }
     if (n2 != pos2) { 
+        int delta = n2 - pos2;
         pos2 = n2; 
         rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr);
         rightEye.setCursor(0,40); rightEye.print("ENC 2: "); rightEye.print(n2); rightEye.sendBuffer();
+        sendCCRelative(71, delta, MIDI_CH_ENC);
     }
     if (n3 != pos3) { 
+        int delta = n3 - pos3;
         pos3 = n3; 
         rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr);
         rightEye.setCursor(0,40); rightEye.print("ENC 3: "); rightEye.print(n3); rightEye.sendBuffer();
+        sendCCRelative(91, delta, MIDI_CH_ENC);
     }
     if (n4 != pos4) { 
+        int delta = n4 - pos4;
         pos4 = n4; 
         rightEye.clearBuffer(); rightEye.setFont(u8g2_font_ncenB14_tr);
         rightEye.setCursor(0,40); rightEye.print("ENC 4: "); rightEye.print(n4); rightEye.sendBuffer();
+        sendCCRelative(7, delta, MIDI_CH_ENC);
     }
 
     // C. MATRICE (Scan)
@@ -228,6 +270,18 @@ void runHardwareTest() {
                 Serial.print(" PIN "); Serial.print(colPins[c]);
                 Serial.print(" CC "); Serial.print(midiMap[r][c]);
                 Serial.print(" ("); Serial.print(buttonName(midiMap[r][c])); Serial.println(")");
+
+                // Envoi MIDI selon la zone
+                int code = midiMap[r][c];
+                if (code != DUMMY) {
+                    if (r >= 3) {
+                        // Notes (rows 3-4) sur canal 1
+                        sendNote(pressed, static_cast<uint8_t>(code));
+                    } else {
+                        // CC/transport sur canal 2
+                        sendCC(static_cast<uint8_t>(code), pressed ? 127 : 0, MIDI_CH_CC);
+                    }
+                }
             }
             // Appui long sur la touche dédiée (Row0/Col13) pour sortir du test
             if (r == KEY_ROW_MENU && c == KEY_COL_MENU) {
@@ -293,6 +347,20 @@ void setup() {
 }
 
 void loop() {
+    // Envoi continu des axes même hors test
+    int joyNow = analogRead(JOYSTICK_X_PIN);
+    if (lastJoy < 0 || abs(joyNow - lastJoy) > 8) {
+        lastJoy = joyNow;
+        int remapped = map(joyNow, 0, 1023, 1023, 0);
+        uint16_t bend = map(remapped, 0, 1023, 0, 16383);
+        sendPitchBend(bend, MIDI_CH_NOTES);
+    }
+    int modNow = analogRead(VOLUME_POT_PIN);
+    if (lastMod < 0 || abs(modNow - lastMod) > 8) {
+        lastMod = modNow;
+        uint8_t ccVal = map(modNow, 0, 1023, 0, 127);
+        sendCC(1, ccVal, MIDI_CH_NOTES);
+    }
     
     // --- MODE MENU ---
     if (currentState == STATE_MENU) {
