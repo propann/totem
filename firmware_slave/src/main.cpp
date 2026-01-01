@@ -319,16 +319,29 @@ void loop() {
     
     // --- MODE INFO ---
     else if (currentState == STATE_INFO) {
-         // Clic pour sortir
-         bool click = false;
-         for (uint8_t r = 0; r < ROW_COUNT; ++r) {
-            digitalWrite(rowPins[r], LOW); delayMicroseconds(20);
+        // Appui long sur la touche dédiée (Row0/Col13) pour sortir
+        bool exitInfo = false;
+        for (uint8_t r = 0; r < ROW_COUNT; ++r) {
+            for (uint8_t rr = 0; rr < ROW_COUNT; ++rr) digitalWrite(rowPins[rr], rr == r ? LOW : HIGH);
+            delayMicroseconds(20);
             for (uint8_t c = 0; c < COL_COUNT; ++c) {
-                if (digitalRead(colPins[c]) == LOW) { click = true; while(digitalRead(colPins[c]) == LOW); }
+                const bool pressed = (digitalRead(colPins[c]) == LOW);
+                if (r == KEY_ROW_MENU && c == KEY_COL_MENU) {
+                    if (pressed && !keyMenuPressed) {
+                        keyMenuPressed = true;
+                        keyMenuPressStart = millis();
+                    }
+                    if (pressed && keyMenuPressed && (millis() - keyMenuPressStart) >= 800) {
+                        exitInfo = true;
+                    }
+                    if (!pressed && keyMenuPressed) {
+                        keyMenuPressed = false;
+                    }
+                }
             }
             digitalWrite(rowPins[r], HIGH);
         }
-        if (click) {
+        if (exitInfo) {
             currentState = STATE_MENU;
             drawMenu();
         }
