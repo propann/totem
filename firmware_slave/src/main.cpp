@@ -37,11 +37,16 @@ const int colPins[COL_COUNT] = {COL_0,  COL_1,  COL_2,  COL_3,  COL_4,  COL_5,  
 
 // Mapping MIDI (Visuel)
 const int midiMap[ROW_COUNT][COL_COUNT] = {
-    {UNDO_BUTTON, TEMPO_BUTTON, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, ENCODER_3_BUTTON, ENCODER_4_BUTTON},
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
-    {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
+    // Row 0 : Contrôles (CC) partiellement mappés
+    {DUMMY, DUMMY, DUMMY, LOOP_BUTTON, LOOP_IN_BUTTON, LOOP_OUT_BUTTON, DUMMY, DUMMY, DUMMY, ENCODER_1_BUTTON, ENCODER_2_BUTTON, DUMMY, ENCODER_3_BUTTON, ENCODER_4_BUTTON},
+    // Row 1 : Contrôles (CC)
+    {DUMMY, DUMMY, DUMMY, CUT_BUTTON, PASTE_BUTTON, SLICE_BUTTON, SAVE_BUTTON, UNDO_BUTTON, DUMMY, DUMMY, DUMMY, DUMMY, DUMMY, DUMMY},
+    // Row 2 : Contrôles (CC)
+    {DUMMY, DUMMY, DUMMY, CONTROL_BUTTON, RECORD_BUTTON, PLAY_BUTTON, STOP_BUTTON, SETTINGS_BUTTON, TEMPO_BUTTON, MIXER_BUTTON, TRACKS_BUTTON, PLUGINS_BUTTON, MODIFIERS_BUTTON, SEQUENCERS_BUTTON},
+    // Row 3 : Notes (instrument)
+    {52, 54, 56, 58, 59, 61, 63, 64, 66, 68, 70, 71, 73, 75},
+    // Row 4 : Notes (instrument)
+    {53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76},
 };
 bool prevState[ROW_COUNT][COL_COUNT] = {};
 // Gestion de la touche unique (Row0/Col13) : clic court = entrer, appui long = sortir
@@ -75,7 +80,18 @@ const char *buttonName(int code) {
         case OCTAVE_CHANGE: return "OCT";
         case PLUS_BUTTON: return "+";
         case MINUS_BUTTON: return "-";
-        default: return "EMPTY";
+        default: {
+            // Si ce n'est pas un CC connu, on retourne le nom de note (ex: C#4)
+            static char noteBuf[6];
+            if (code >= 0 && code <= 127) {
+                static const char *names[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+                int octave = (code / 12) - 1;
+                const char *n = names[code % 12];
+                snprintf(noteBuf, sizeof(noteBuf), "%s%d", n, octave);
+                return noteBuf;
+            }
+            return "EMPTY";
+        }
     }
 }
 
