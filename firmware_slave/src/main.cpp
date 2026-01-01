@@ -175,7 +175,8 @@ void runHardwareTest() {
         leftEye.setFont(u8g2_font_9x15B_tr);
         leftEye.drawStr(0, 15, "TEST MODE");
         leftEye.drawFrame(0, 30, 128, 20);
-        leftEye.drawBox(0, 30, map(joy, 0, 1023, 0, 128), 20);
+        // Inversion de l'axe pour que la barre suive le sens physique souhaité
+        leftEye.drawBox(0, 30, map(joy, 0, 1023, 128, 0), 20);
         leftEye.sendBuffer();
     }
 
