@@ -1,47 +1,151 @@
-# TOTEM Workstation
+> NOTE: Microdexed-touch is capable of generating audio with a large dynamic range, the extremes of which can cause damage to loudspeakers or other components, and also to your hearing.
+> Please be specially careful when activating the MultiBand Compressor. Depending on it's settings, this easily can increase the perceived output loudness by 10x or even more.<br>
+> Set the volume **on your amplifier to zero** and then increase the volume in slow steps, to avoid taking any risk hurting your ears or your equipment.
 
-**TOTEM** est une workstation audio open-source basée sur l'architecture "Dual-Teensy", dérivée du projet LMN-3.
-**Based on the LMN-3 Project by fundamental.frequency.**
-Ce dépôt contient le code source unifié pour le processeur Maître (Audio) et le processeur Esclave (Contrôle/UI).
+# MicroDexed-touch
 
-## ⚠️ AVERTISSEMENT MATÉRIEL CRITIQUE ⚠️
+<br><p>
+<img src="https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/Capacitive_Touch/mdt_capacitive_touch.png" >
+<br>
+(SLA PRINTED ENCLOSURE, DISPLAY SIZE LEFT: 2.8", MIDDLE: 2,8" and RIGHT: 3.2")
+<br><p>
+<img src="https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/Capacitive_Touch/pcb28-32.jpg" >
+<br>
+(PCB BASED FRONT/BACK PANEL, DISPLAY SIZE LEFT 2.8" and RIGHT 3.2")
+<br><p>
+## This is MicroDexed with TFT Touch Display, graphic UI and sequencer
 
-Ce firmware est conçu pour une version **modifiée** du PCB LMN-3. Ne pas flasher sur un PCB LMN-3 stock sans lire ceci :
+### This build requires a Teensy 4.1,  PCM5102A Audio Board, 320x240 ILI9341 SPI Display with Capacitive Touchscreen and a PSRAM Chip for custom samples.
+<p>
 
-### Architecture Dual-Teensy 4.1
-1.  **MASTER (Moteur Audio)** : Teensy 4.1 standard.
-2.  **SLAVE (Contrôleur UI)** : Teensy 4.1 avec modifications physiques irréversibles.
+MicroDexed started as a Teensy based, 6-operator-FM-synthesizer. The first generation is still maintained at: [https://codeberg.org/dcoredump/MicroDexed](https://codeberg.org/dcoredump/MicroDexed)
 
-### Modifications du Teensy Esclave (Hardware Hack)
-Pour libérer les bus de communication UART et S/PDIF, les pins suivantes du Teensy Esclave doivent être **PLIÉES** (isolées du PCB) et connectées via des fils volants :
+Compared to the first generation, MicroDexed-touch offers a lot of new features/improvements:
 
-* **Pin 0 (RX1)** : Connectée au Master TX.
-* **Pin 1 (TX1)** : Connectée au Master RX.
-* **Pin 14 (S/PDIF)** : Connectée au Master Pin 15.
+* "Large" Graphical Interface, view and edit multiple Parameters in one Screen
 
-### Réparation de la Matrice (Fly-wires)
-L'isolation des pins 0, 1 et 14 coupe des colonnes de la matrice clavier. Elles sont reroutées ainsi :
-* Colonne 7 (Anciennement Pin 0) ➔ **Pin 33**
-* Colonne 6 (Anciennement Pin 1) ➔ **Pin 37**
-* Colonne 9 (Anciennement Pin 14) ➔ **Pin 38**
+* Use external MIDI gear over USB or Mini TRS Jacks (DIN MIDI with adaptor) from 2 x 16 MIDI Channels in the Sequencer
 
----
+* Map MIDI CC to external MIDI Devices to control Input/Parameters
 
-## 🎹 Mapping des Touches (Mode Groovebox)
+* Global plate reverb, 2 global delay effects (500ms, with added PSRAM chip 60 seconds or even more)
 
-L'interface est divisée en zones fonctionnelles :
-* **Zone Rythme (Haut Gauche 4x4)** : Déclencheurs MIDI (Canal 10).
-* **Zone Mélodie (2 Rangées du bas)** : Clavier chromatique (Canal 1).
-* **Zone Commandes (L-Shape Droite)** : Octave +/-, Shift, Mode, Menus, Transport.
-* **Encodeurs** :
-    * 1-3 : Paramètres de performance (Cutoff, Reso, FX).
-    * 4 (Droite) : Navigation Système (Rotation = Scroll, Click = Enter).
+* Loading, playing and editing multi-sampled instruments or layered instruments in a "live" mode or played by the sequencer. Auto detection sample zones but also can be edited manually. This is early work in progress and currently not stable when using pitch shifting and polyphony
 
-## 🛠 Installation
+* 2 instances of "Virtual Analog" Monosynths with one OSC, PWM, Multimode Filter and Noise. A lot of useful new sound possibilities.
 
-Le projet utilise **PlatformIO**.
-1.  Ouvrir le dossier dans VSCode avec l'extension PlatformIO.
-2.  Sélectionner l'environnement :
-    * `env:totem_master` pour le Teensy Audio.
-    * `env:totem_slave` pour le Teensy Contrôleur.
-3.  Upload via USB (En cas de bug Esclave, maintenir le bouton Encodeur 4 au démarrage pour le mode Diagnostic).
+* 8 voice polyphonic Oscillator, based on the code of Mutable Instruments - Braids. No wavetables but added individual envelopes and multimode filters for all voices
+ 
+* Much improved Sequencer with 8 Tracks, 16 Step Patterns, 16 Step Pattern Chains, up to 16384 Song Steps, Arpeggiator with 1/8 - 1/64 Steps, Arp Patterns including Euclidean settings, Pitched Drum- and Instrument Sample playback
+
+* The sequencer can also play chords of various types, stacked up to 7 notes, using only a single sequencer track
+
+* In addition to the chain based Sequencer there is second sequencing tool: LIVE SEQUENCER
+
+* LIVE SEQUENCER offers 12 tracks for recording up to 4 patterns each, including a Song mode with pattern muting
+
+* Both sequencers do work together and are fully synced
+
+* Global Mixer View with all Channels
+
+* Multiband Master Compressor with 4 bands
+
+* Sample Management from SD-CARD and PSRAM, samples can be loaded from SD-CARD to PSRAM during runtime.
+
+* Touch Mute Matrix for live / realtime performance
+
+* Tracker View (Editor) - work in progress
+
+* Track Print/Recording - work in progress
+
+* Remote control in web-based 1:1 UI with added features (filemanager,filetransfer, screenshots etc.) Work in progress - connected to PC via Teensy MicroUSB Connector
+
+[https://www.youtube.com/watch?v=AkmqZVpW2Vg
+](https://www.youtube.com/watch?v=AkmqZVpW2Vg)
+by Floyd Steinberg
+<br>
+<p>
+
+[Part1/2](https://www.youtube.com/watch?v=v6thf0vhRxU)
+by fellpower (german language)
+
+[Part2/2](https://www.youtube.com/watch?v=wfSquKaAqik)
+by fellpower (german language)
+
+### YouTube playlist about the development:
+[https://www.youtube.com/playlist?list=PLHTypoMU1QoGOXPli8bjR6MknPiQpubHl
+](https://www.youtube.com/playlist?list=PLHTypoMU1QoGOXPli8bjR6MknPiQpubHl)
+
+## If you want to donate to this project, please check out this link:
+
+<a href="https://liberapay.com/positionhigh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>
+
+### User Chat groups
+
+[https://discord.gg/XCYk5P8GzF](https://discord.gg/XCYk5P8GzF)
+
+[https://matrix.to/#/#microdexed:matrix.org](https://matrix.to/#/#microdexed:matrix.org)
+
+### PCB is available from PCBWAY
+
+If you register and pay as a new user at PCBWAY with this Invite link, you should get $5 "New User Free Credit" - so you can order 5 PCB pieces for "free", except shipping and customs cost etc.
+    
+[https://www.pcbway.com/setinvite.aspx?inviteid=565384](https://www.pcbway.com/setinvite.aspx?inviteid=565384)
+<br>
+
+[MDT Product Page on PCBWAY](https://www.pcbway.com/project/shareproject/MicroDexed_Capacitive_Touch_64970fee.html)
+<br>
+
+[MDTX Product Page on PCBWAY](https://www.pcbway.com/project/shareproject/[MDTX]_MicroDexed_Extended_Edition_2810710b.html)
+<br>
+
+<a href="https://www.pcbway.com/project/shareproject/MicroDexed_Capacitive_Touch_64970fee.html"><img src="https://www.pcbway.com/project/img/images/frompcbway-1220.png" alt="PCB from PCBWay" /></a>
+
+<br>
+<p>
+
+## WIKI
+
+Installation / BOM / Compile Instructions / 3D printer files / FAQ / Changelog / News / Troubleshooting etc.
+<br>
+[https://codeberg.org/positionhigh/MicroDexed-touch/wiki/?action=_pages](https://codeberg.org/positionhigh/MicroDexed-touch/wiki/?action=_pages)
+
+## License
+
+This is a port of the original Dexed/msfa engine (see https://github.com/asb2m10/dexed and https://github.com/google/music-synthesizer-for-android) to be used on a ~~Teensy-3.6 or~~ Teensy-4.1.
+
+MicroDexed is licensed on the GPL v3. The msfa component (acronym for music synthesizer for android, see https://github.com/google/music-synthesizer-for-android) stays on the Apache 2.0 license to able to collaborate between projects.
+
+## Buttons / Encoders
+
+A quick guide how the push Encoders are working:
+
+Encoder left will be referred to as ENC_L and encoder right will be referred to as ENC_R.
+
+[SHORT PUSH] means a simple, momentary push on the encoder.
+
+[LONG PUSH] means a push and hold down of the encoder for about 2 seconds.
+
+Usually [SHORT PUSH] ENC_L brings you back to the main menu or closer to the main menu one step.
+
+Usually [SHORT PUSH] ENC_R selects or confirms an input/menu item/goes deeper into this item.
+
+In microsynth and in dexed voice page, [LONG PUSH] ENC_R, switches between the 2 Instances.
+
+In Menus that need 2 Encoders for naviation, ENC_R controls Y movement and ENC_L controls X movement (for example in Song mode)
+
+[LONG PUSH] ENC_L starts and stops the sequencer in most pages.
+ 
+## MDT MANUAL AND BUILD GUIDE
+
+https://codeberg.org/positionhigh/MicroDexed-touch/raw/branch/main/doc/MicroDexed-touch-manual.pdf
+
+## CONTRIBUTING
+
+This project lives from the contributions of C++ developers, testers, reviewers. Please check https://codeberg.org/positionhigh/MicroDexed-touch/issues to help in open topics or add your own Issue or Feature Request.
+
+## SURVEY / POLL: Let us know what you want to see (manufacturing/building MDT)
+[https://www.supersurvey.com/poll4335406x48364DD1-136](https://www.supersurvey.com/poll4335406x48364DD1-136)
+
+## SURVEY / POLL 08/2024 feature requests:
+[https://qvgopz6on.supersurvey.com/](https://qvgopz6on.supersurvey.com/)
